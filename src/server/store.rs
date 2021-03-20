@@ -1,21 +1,45 @@
 use crate::server::{execute::SelectRequest, operators::Select, record::Record};
+//use fst::{Map, MapBuilder};
+use roaring::RoaringBitmap;
 use std::{
     collections::HashMap,
     sync::{mpsc::Receiver, Arc, Mutex, RwLock},
     thread,
 };
 
+struct Block {
+    //    index: fst::MapBuilder<RoaringBitmap>,
+    index: HashMap<String, RoaringBitmap>,
+    storage: Vec<Series>,
+    id_map: Vec<String>,
+    key_map: HashMap<String, usize>,
+}
+
+impl Block {
+    fn new() -> Self {
+        Block {
+            //            index: fst::MapBuilder::memory(),
+            index: HashMap::new(),
+            storage: vec![],
+            id_map: vec![],
+            key_map: HashMap::new(),
+        }
+    }
+}
+
 // Series struct.
 struct Series {
     id: usize,
+    key: String,
     records: Mutex<Vec<Record>>,
 }
 
 impl Series {
     // Constructor.
-    fn new(id: usize, record: Record) -> Self {
+    fn new(id: usize, key: String, record: Record) -> Self {
         Series {
             id: id,
+            key: key,
             records: Mutex::new(vec![record]),
         }
     }
@@ -28,7 +52,7 @@ impl Series {
 }
 
 // Ingests a read operation.
-fn db_read(read_rx: Receiver<SelectRequest>, index: Arc<RwLock<HashMap<String, Series>>>) {
+fn db_read(read_rx: Receiver<SelectRequest>, index: Arc<RwLock<Block>>) {
     // Receive read operations from the server
     for request in read_rx {
         let statement = request.statement.clone();
@@ -38,35 +62,51 @@ fn db_read(read_rx: Receiver<SelectRequest>, index: Arc<RwLock<HashMap<String, S
 }
 
 // Ingests a write operation.
-fn db_write(write_rx: Receiver<Record>, storage: Arc<RwLock<HashMap<String, Series>>>) {
-    let mut id: usize = 0;
-    let mut id_map: Vec<String> = Vec::new();
+fn db_write(write_rx: Receiver<Record>, storage: Arc<RwLock<Block>>) {
     // Receive write operations from the server
     for received in write_rx {
         let key: String = received.get_key();
-        // Obtain a read lock on storage
-        let map = storage.read().expect("RwLock poisoned");
+        let mut block = storage.write().expect("RwLock poisoned");
         //
-        if let Some(series) = map.get(&key) {
+        if let Some(id) = block.key_map.get(&key) {
             println!("Received a familiar key!");
-            series.insert(received);
+            block.storage[*id].insert(received);
             continue;
         }
         // Key does not exist in map
         println!("First time seeing this key.");
         // Replace read lock with a write lock
-        drop(map);
-        let mut map = storage.write().expect("RwLock poisoned");
-        map.insert(key.clone(), Series::new(id.clone(), received));
-        id_map.push(key);
-        id += 1;
+        let id = block.storage.len();
+        block
+            .storage
+            .push(Series::new(id.clone(), key.clone(), received.clone()));
+        block.id_map.push(key.clone());
+        block.key_map.insert(key, id.clone());
+        // Insert label into the fst
+        let labels = received.get_labels();
+        for label in labels {
+            // Check if label is in fst
+            match block.index.get_mut(&label) {
+                Some(rb) => {
+                    rb.insert(id as u32);
+                }
+                None => {
+                    let mut new_rb = RoaringBitmap::new();
+                    new_rb.insert(id as u32);
+                    block.index.insert(label, new_rb);
+                }
+            }
+            // If so, get bitset and add id to ibtset
+            // if not, add label to fst, create bitset, and init with id
+            //            let bitset = block.index.insert(labe);
+        }
     }
 }
 
 //
 pub fn db_open(read_rx: Receiver<SelectRequest>, write_rx: Receiver<Record>) {
     // Create an in-memory storage structure
-    let index = Arc::new(RwLock::new(HashMap::new()));
+    let index = Arc::new(RwLock::new(Block::new()));
 
     // Set up separate r/w threads so that read operations don't block writes
     let read_index = Arc::clone(&index);

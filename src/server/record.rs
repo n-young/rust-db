@@ -40,14 +40,24 @@ impl Record {
         }
         temp_key
     }
+
+    pub fn get_labels(&self) -> Vec<String> {
+        self.labels
+            .iter()
+            .map(|(x, y)| format!("{}={}", x, y))
+            .collect()
+    }
 }
 impl fmt::Display for Record {
     // Formatter.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{{name: {}, timestamp: {}, labels: {:#?}, variables: {:#?}}}", self.name, self.timestamp, self.labels, self.variables)
+        write!(
+            f,
+            "{{name: {}, timestamp: {}, labels: {:#?}, variables: {:#?}}}",
+            self.name, self.timestamp, self.labels, self.variables
+        )
     }
 }
-
 
 #[cfg(test)]
 mod test {
