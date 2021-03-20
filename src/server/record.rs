@@ -1,9 +1,10 @@
 use std::collections::HashMap;
-use std::fmt::Display;
+use std::fmt;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+// Record struct.
 #[derive(Debug, PartialEq, Deserialize, Serialize, Clone)]
 pub struct Record {
     name: String,
@@ -13,6 +14,7 @@ pub struct Record {
 }
 
 impl Record {
+    // Constructor.
     pub fn new(
         name: String,
         labels: HashMap<String, String>,
@@ -27,6 +29,7 @@ impl Record {
         }
     }
 
+    // Get key.
     pub fn get_key(&self) -> String {
         let mut temp_key: String = self.name.clone();
         let mut sorted_labels: Vec<_> = self.labels.iter().collect();
@@ -38,12 +41,13 @@ impl Record {
         temp_key
     }
 }
+impl fmt::Display for Record {
+    // Formatter.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{{name: {}, timestamp: {}, labels: {:#?}, variables: {:#?}}}", self.name, self.timestamp, self.labels, self.variables)
+    }
+}
 
-// impl Display for Record {
-//     fn fmt() ->  {
-//         // TODO: Tostring
-//     }
-// }
 
 #[cfg(test)]
 mod test {

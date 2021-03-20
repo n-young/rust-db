@@ -2,12 +2,14 @@ use crate::server::operators::{Op, Select};
 use crate::{error::Error, server::record::Record};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
+// SelectRequest struct.
 pub struct SelectRequest {
     pub statement: Select,
     result_tx: Sender<Vec<Record>>,
 }
 
 impl SelectRequest {
+    // Constructor.
     fn new(s: Select) -> (Self, Receiver<Vec<Record>>) {
         let (tx, rx): (Sender<Vec<Record>>, Receiver<Vec<Record>>) = channel();
         (
@@ -19,11 +21,14 @@ impl SelectRequest {
         )
     }
 
+    // Send a reply back to the receiver.
     pub fn reply(&self, r: Vec<Record>) {
         self.result_tx.send(r).unwrap();
     }
 }
 
+// Execute an operation, given a sender to send back reads (to a SelectRequest)
+// and a sender to send writes (to the DB).
 pub fn execute(
     operation: Op,
     read_tx: &Sender<SelectRequest>,
@@ -35,6 +40,7 @@ pub fn execute(
     }
 }
 
+// Execute a select.
 fn execute_select(
     statement: Select,
     tx: &Sender<SelectRequest>,
@@ -46,6 +52,7 @@ fn execute_select(
     Ok(Some(result))
 }
 
+// Execute a write.
 fn execute_write(record: Record, tx: &Sender<Record>) -> Result<Option<Vec<Record>>, Error> {
     let record_dup = record.clone();
     tx.send(record).unwrap();

@@ -1,0 +1,40 @@
+{
+    "Select": {
+        "name": "redis",
+        "predicate": {
+            "name": "pred",
+            "condition": {
+                "And": [
+                    {
+                        "Leaf": {
+                            "lhs": { "LabelKey": "Key" },
+                            "rhs": { "LabelValue": "Value" },
+                            "op": "Eq"
+                        }
+                    },
+                    {
+                        "Leaf": {
+                            "lhs": { "LabelKey": "Key" },
+                            "rhs": { "LabelValue": "Value" },
+                            "op": "Eq"
+                        }
+                    },
+                    {
+                        "Leaf": {
+                            "lhs": { "LabelKey": "Key" },
+                            "rhs": { "LabelValue": "Value" },
+                            "op": "Eq"
+                        }
+                    },
+                    {
+                        "Leaf": {
+                            "lhs": { "LabelKey": "Key" },
+                            "rhs": { "LabelValue": "Value" },
+                            "op": "Eq"
+                        }
+                    }
+                ]
+            }
+        }
+    }
+}

@@ -112,34 +112,4 @@ mod test {
         );
         assert_eq!(d, exp);
     }
-
-    // #[test]
-    // fn test_deser_select() {
-    //     let data = r#"
-    //     {"Select": {
-    //             "name": "cpu",
-    //             "predicate": {
-    //                 "name": "pred",
-    //                 "condition": {
-    //                     "Leaf": {
-    //                         "lhs": {"Variable": "Var"},
-    //                         "rhs": {"Metric": 6.0},
-    //                         "op": "Gt"
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     "#;
-    //     let d: Select = serde_json::from_str(data).expect("Huh?");
-
-    //     let conds = Conditions::Leaf(Condition {
-    //         lhs: Type::Variable(String::from("Var")),
-    //         rhs: Type::Metric(6.0),
-    //         op: Op::Gt,
-    //     });
-    //     let pred = Predicate{ name: String::from("pred"), condition: conds };
-    //     let sel = Select { name: String::from("cpu"), predicate: pred };
-    //     assert_eq!(d, sel);
-    // }
 }

@@ -3,26 +3,29 @@ use std::{
     sync::{mpsc::Receiver, Arc, Mutex, RwLock},
     thread,
 };
-
 use crate::server::{execute::SelectRequest, operators::Select, record::Record};
 
+// Series struct.
 struct Series {
     records: Mutex<Vec<Record>>,
 }
 
 impl Series {
+    // Constructor.
     fn new(record: Record) -> Self {
         Series {
             records: Mutex::new(vec![record]),
         }
     }
 
+    // Insert a record into this series.
     fn insert(&self, record: Record) {
         let mut v = self.records.lock().unwrap();
         v.push(record);
     }
 }
 
+// Ingests a read operation.
 fn db_read(read_rx: Receiver<SelectRequest>, index: Arc<RwLock<HashMap<String, Series>>>) {
     // Receive read operations from the server
     for request in read_rx {
@@ -32,6 +35,7 @@ fn db_read(read_rx: Receiver<SelectRequest>, index: Arc<RwLock<HashMap<String, S
     }
 }
 
+// Ingests a write operation.
 fn db_write(write_rx: Receiver<Record>, storage: Arc<RwLock<HashMap<String, Series>>>) {
     // Receive write operations from the server
     for received in write_rx {
@@ -53,6 +57,7 @@ fn db_write(write_rx: Receiver<Record>, storage: Arc<RwLock<HashMap<String, Seri
     }
 }
 
+// 
 pub fn db_open(read_rx: Receiver<SelectRequest>, write_rx: Receiver<Record>) {
     // Create an in-memory storage structure
     let index = Arc::new(RwLock::new(HashMap::new()));
