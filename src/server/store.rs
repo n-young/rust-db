@@ -7,6 +7,7 @@ use std::{
 
 // Series struct.
 struct Series {
+    id: usize,
     records: Mutex<Vec<Record>>,
 }
 
@@ -56,7 +57,7 @@ fn db_write(write_rx: Receiver<Record>, storage: Arc<RwLock<HashMap<String, Seri
         // Replace read lock with a write lock
         drop(map);
         let mut map = storage.write().expect("RwLock poisoned");
-        map.insert(key, Series::new(id.clone(), received));
+        map.insert(key.clone(), Series::new(id.clone(), received));
         id_map.push(key);
         id += 1;
     }
