@@ -1,9 +1,9 @@
+use crate::server::{execute::SelectRequest, operators::Select, record::Record};
 use std::{
     collections::HashMap,
     sync::{mpsc::Receiver, Arc, Mutex, RwLock},
     thread,
 };
-use crate::server::{execute::SelectRequest, operators::Select, record::Record};
 
 // Series struct.
 struct Series {
@@ -12,8 +12,9 @@ struct Series {
 
 impl Series {
     // Constructor.
-    fn new(record: Record) -> Self {
+    fn new(id: usize, record: Record) -> Self {
         Series {
+            id: id,
             records: Mutex::new(vec![record]),
         }
     }
@@ -37,6 +38,8 @@ fn db_read(read_rx: Receiver<SelectRequest>, index: Arc<RwLock<HashMap<String, S
 
 // Ingests a write operation.
 fn db_write(write_rx: Receiver<Record>, storage: Arc<RwLock<HashMap<String, Series>>>) {
+    let mut id: usize = 0;
+    let mut id_map: Vec<String> = Vec::new();
     // Receive write operations from the server
     for received in write_rx {
         let key: String = received.get_key();
@@ -53,11 +56,13 @@ fn db_write(write_rx: Receiver<Record>, storage: Arc<RwLock<HashMap<String, Seri
         // Replace read lock with a write lock
         drop(map);
         let mut map = storage.write().expect("RwLock poisoned");
-        map.insert(key, Series::new(received));
+        map.insert(key, Series::new(id.clone(), received));
+        id_map.push(key);
+        id += 1;
     }
 }
 
-// 
+//
 pub fn db_open(read_rx: Receiver<SelectRequest>, write_rx: Receiver<Record>) {
     // Create an in-memory storage structure
     let index = Arc::new(RwLock::new(HashMap::new()));
