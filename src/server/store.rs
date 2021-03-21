@@ -31,7 +31,7 @@ impl Block {
 struct Series {
     id: usize,
     key: String,
-    records: Mutex<Vec<Record>>,
+    pub records: RwLock<Vec<Record>>,
 }
 
 impl Series {
@@ -40,13 +40,13 @@ impl Series {
         Series {
             id: id,
             key: key,
-            records: Mutex::new(vec![record]),
+            records: RwLock::new(vec![record]),
         }
     }
 
     // Insert a record into this series.
     fn insert(&self, record: Record) {
-        let mut v = self.records.lock().unwrap();
+        let mut v = self.records.write().expect("RwLock poisoned");
         v.push(record);
     }
 }
