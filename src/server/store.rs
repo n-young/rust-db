@@ -3,14 +3,14 @@ use crate::server::{execute::SelectRequest, operators::Select, record::Record};
 use roaring::RoaringBitmap;
 use std::{
     collections::HashMap,
-    sync::{mpsc::Receiver, Arc, Mutex, RwLock},
+    sync::{mpsc::Receiver, Arc, RwLock},
     thread,
 };
 
-struct Block {
+pub struct Block {
     //    index: fst::MapBuilder<RoaringBitmap>,
-    index: HashMap<String, RoaringBitmap>,
-    storage: Vec<Series>,
+    pub index: HashMap<String, RoaringBitmap>,
+    pub storage: Vec<Series>,
     id_map: Vec<String>,
     key_map: HashMap<String, usize>,
 }
@@ -28,7 +28,7 @@ impl Block {
 }
 
 // Series struct.
-struct Series {
+pub struct Series {
     id: usize,
     key: String,
     pub records: RwLock<Vec<Record>>,
@@ -52,30 +52,30 @@ impl Series {
 }
 
 // Ingests a read operation.
-fn db_read(read_rx: Receiver<SelectRequest>, index: Arc<RwLock<Block>>) {
+fn db_read(read_rx: Receiver<SelectRequest>, shared_block: Arc<RwLock<Block>>) {
     // Receive read operations from the server
     for request in read_rx {
         let statement = request.statement.clone();
         println!("Received statement: {:?}", statement);
-        request.reply(Vec::new());
+        let result = statement.eval(&shared_block);
+        request.reply(result);
     }
 }
 
 // Ingests a write operation.
-fn db_write(write_rx: Receiver<Record>, storage: Arc<RwLock<Block>>) {
+fn db_write(write_rx: Receiver<Record>, shared_block: Arc<RwLock<Block>>) {
     // Receive write operations from the server
     for received in write_rx {
         let key: String = received.get_key();
-        let mut block = storage.write().expect("RwLock poisoned");
-        //
+        let mut block = shared_block.write().expect("RwLock poisoned");
+        // Check if this series exists in the block
         if let Some(id) = block.key_map.get(&key) {
             println!("Received a familiar key!");
             block.storage[*id].insert(received);
             continue;
         }
-        // Key does not exist in map
+        // Key does not exist in the block
         println!("First time seeing this key.");
-        // Replace read lock with a write lock
         let id = block.storage.len();
         block
             .storage
@@ -106,13 +106,13 @@ fn db_write(write_rx: Receiver<Record>, storage: Arc<RwLock<Block>>) {
 //
 pub fn db_open(read_rx: Receiver<SelectRequest>, write_rx: Receiver<Record>) {
     // Create an in-memory storage structure
-    let index = Arc::new(RwLock::new(Block::new()));
+    let shared_block = Arc::new(RwLock::new(Block::new()));
 
     // Set up separate r/w threads so that read operations don't block writes
-    let read_index = Arc::clone(&index);
-    let read_thr = thread::spawn(move || db_read(read_rx, read_index));
-    let write_index = Arc::clone(&index);
-    let write_thr = thread::spawn(move || db_write(write_rx, write_index));
+    let read_block = Arc::clone(&shared_block);
+    let read_thr = thread::spawn(move || db_read(read_rx, read_block));
+    let write_block = Arc::clone(&shared_block);
+    let write_thr = thread::spawn(move || db_write(write_rx, write_block));
     read_thr.join().unwrap();
     write_thr.join().unwrap();
 }
