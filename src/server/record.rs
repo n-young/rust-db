@@ -55,6 +55,10 @@ impl Record {
             .map(|(x, y)| format!("{}={}", x, y))
             .collect()
     }
+
+    pub fn get_timestamp(&self) -> DateTime<Utc> {
+        self.timestamp
+    }
 }
 impl fmt::Display for Record {
     // Formatter.

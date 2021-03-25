@@ -1,4 +1,4 @@
-use crate::server::{execute::SelectRequest, operators::Select, record::Record};
+use crate::server::{execute::SelectRequest, record::Record};
 //use fst::{Map, MapBuilder};
 use roaring::RoaringBitmap;
 use std::{
@@ -58,7 +58,7 @@ fn db_read(read_rx: Receiver<SelectRequest>, shared_block: Arc<RwLock<Block>>) {
         let statement = request.statement.clone();
         println!("Received statement: {:?}", statement);
         let result = statement.eval(&shared_block);
-        request.reply(result);
+        request.reply(result.into_vec());
     }
 }
 
