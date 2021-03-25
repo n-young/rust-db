@@ -117,23 +117,27 @@ pub struct Condition {
 
 impl Condition {
     fn eval(&self, shared_block: &Arc<RwLock<Block>>) -> ResultSet {
-        match self.op {
-            Op::Eq => {
-                let label = format!("{}={}", self.lhs.eval(), self.rhs.eval());
-                let mut results: Vec<Record> = vec![];
-                let block = shared_block.read().expect("RwLock poisoned");
-                if let Some(rb) = block.index.get(&label) {
-                    for id in rb.iter() {
-                        let series = block.storage[id as usize]
-                            .records
-                            .read()
-                            .expect("RwLock poisoned");
-                        results.append(&mut series.clone());
+        if (self.lhs.is_labelkey() && self.rhs.is_labelvalue()) {
+            match self.op {
+                Op::Eq => {
+                    let label = format!("{}={}", self.lhs.eval(), self.rhs.eval());
+                    let mut results: Vec<Record> = vec![];
+                    let block = shared_block.read().expect("RwLock poisoned");
+                    if let Some(rb) = block.index.get(&label) {
+                        for id in rb.iter() {
+                            let series = block.storage[id as usize]
+                                .records
+                                .read()
+                                .expect("RwLock poisoned");
+                            results.append(&mut series.clone());
+                        }
                     }
+                    ResultSet { data: results }
                 }
-                ResultSet { data: results }
+                _ => ResultSet { data: vec![] },
             }
-            _ => ResultSet { data: vec![] },
+        } else if (self.lhs.is_variable() && self.rhs.is_metric()) {
+            // TODO: Finish metric evaluation
         }
     }
 }
@@ -155,6 +159,34 @@ impl Type {
             Type::Metric(v) => format!("{}", v),
         }
     }
+
+    fn is_labelkey(&self) -> bool {
+        match self {
+            Type::LabelKey => true,
+            _ => false
+        }
+    }
+
+    fn is_labelvalue(&self) -> bool {
+        match self {
+            Type::LabelValue => true,
+            _ => false
+        }
+    }
+
+    fn is_variable(&self) -> bool {
+        match self {
+            Type::Variable => true,
+            _ => false
+        }
+    }
+
+    fn is_metric(&self) -> bool {
+        match self {
+            Type::Metric => true,
+            _ => false
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
@@ -165,6 +197,19 @@ pub enum Op {
     Lt,
     GtEq,
     LtEq,
+}
+
+impl Op {
+    fn get_op(&self) -> Box<Fn(String, f64) -> bool> {
+        match self {
+            Op::Eq => Box::new(move |a, b| a == b),
+            Op::NEq => Box::new(move |a, b| a != b),
+            Op::Gt => Box::new(move |a, b| a > b),
+            Op::Lt => Box::new(move |a, b| a < b),
+            Op::GtEq => Box::new(move |a, b| a >= b),
+            Op::LtEq => Box::new(move |a, b| a <= b), 
+        }
+    }
 }
 
 #[cfg(test)]

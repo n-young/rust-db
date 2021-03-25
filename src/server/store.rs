@@ -8,17 +8,19 @@ use std::{
 };
 
 pub struct Block {
-    //    index: fst::MapBuilder<RoaringBitmap>,
+    // TODO: Fix fst lol
+    // index: fst::MapBuilder<RoaringBitmap>,
     pub index: HashMap<String, RoaringBitmap>,
     pub storage: Vec<Series>,
     id_map: Vec<String>,
+    // TODO: Index over metrics as well, can put it here
     key_map: HashMap<String, usize>,
 }
 
 impl Block {
     fn new() -> Self {
         Block {
-            //            index: fst::MapBuilder::memory(),
+            // index: fst::MapBuilder::memory(),
             index: HashMap::new(),
             storage: vec![],
             id_map: vec![],
