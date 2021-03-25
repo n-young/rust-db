@@ -1,8 +1,6 @@
 use crate::server::record::Record;
 use crate::server::store::Block;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::iter::FromIterator;
 use std::sync::{Arc, RwLock};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
@@ -12,8 +10,64 @@ pub struct Select {
 }
 
 impl Select {
-    pub fn eval(&self, shared_block: &Arc<RwLock<Block>>) -> Vec<Record> {
+    pub fn eval(&self, shared_block: &Arc<RwLock<Block>>) -> ResultSet {
         self.predicate.eval(shared_block)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ResultSet {
+    // Assumed sorted by timestamp; must maintain invariant.
+    data: Vec<Record>
+}
+
+impl ResultSet {
+    // Assumes both are sorted by timestamp.
+    pub fn union(&self, other: ResultSet) -> ResultSet {
+        let mut res = Vec::with_capacity(self.data.len() + other.data.len());
+        let mut i = 0;
+        let mut j = 0;
+        while i < self.data.len() && j < other.data.len() {
+            if self.data[i].get_timestamp() < other.data[j].get_timestamp() {
+                res.push(self.data[i].clone());
+                i += 1;
+            } else if self.data[i].get_timestamp() > other.data[j].get_timestamp() {
+                res.push(other.data[i].clone());
+                j += 1;
+            } else if self.data[i] == other.data[j] {
+                res.push(self.data[i].clone());
+                i += 1;
+                j += 1;
+            }
+                
+        }
+        res.append(&mut Vec::from(self.data.get(i..).unwrap()));
+        res.append(&mut Vec::from(other.data.get(j..).unwrap()));
+        ResultSet { data: res }
+    }
+
+    // Assumes both are sorted by timestamp.
+    pub fn intersection(&self, other: ResultSet) -> ResultSet {
+        let mut res = Vec::with_capacity(self.data.len() + other.data.len());
+        let mut i = 0;
+        let mut j = 0;
+        while i < self.data.len() && j < other.data.len() {
+            if self.data[i].get_timestamp() < other.data[j].get_timestamp() {
+                i += 1;
+            } else if self.data[i].get_timestamp() > other.data[j].get_timestamp() {
+                j += 1;
+            } else if self.data[i] == other.data[j] {
+                res.push(self.data[i].clone());
+                i += 1;
+                j += 1;
+            }
+                
+        }
+        ResultSet { data: res }
+    }
+
+    pub fn into_vec(&self) -> Vec<Record> {
+        self.data.clone()
     }
 }
 
@@ -24,8 +78,8 @@ pub struct Predicate {
 }
 
 impl Predicate {
-    fn eval(&self, shared_block: &Arc<RwLock<Block>>) -> Vec<Record> {
-        self.condition.eval(shared_block).into_iter().collect()
+    fn eval(&self, shared_block: &Arc<RwLock<Block>>) -> ResultSet {
+        self.condition.eval(shared_block)
     }
 }
 
@@ -37,18 +91,18 @@ pub enum Conditions {
 }
 
 impl Conditions {
-    fn eval(&self, shared_block: &Arc<RwLock<Block>>) -> HashSet<Record> {
+    fn eval(&self, shared_block: &Arc<RwLock<Block>>) -> ResultSet {
         match self {
             Conditions::Leaf(cond) => cond.eval(shared_block),
             Conditions::And(b1, b2) => {
                 let results1 = (*b1).eval(shared_block);
                 let results2 = (*b2).eval(shared_block);
-                results1.union(&results2).cloned().collect()
+                results1.union(results2)
             }
             Conditions::Or(b1, b2) => {
                 let results1 = (*b1).eval(shared_block);
                 let results2 = (*b2).eval(shared_block);
-                results1.intersection(&results2).cloned().collect()
+                results1.intersection(results2)
             }
         }
     }
@@ -62,11 +116,11 @@ pub struct Condition {
 }
 
 impl Condition {
-    fn eval(&self, shared_block: &Arc<RwLock<Block>>) -> HashSet<Record> {
+    fn eval(&self, shared_block: &Arc<RwLock<Block>>) -> ResultSet {
         match self.op {
             Op::Eq => {
                 let label = format!("{}={}", self.lhs.eval(), self.rhs.eval());
-                let mut results: HashSet<Record> = HashSet::new();
+                let mut results: Vec<Record> = vec![];
                 let block = shared_block.read().expect("RwLock poisoned");
                 if let Some(rb) = block.index.get(&label) {
                     for id in rb.iter() {
@@ -74,14 +128,12 @@ impl Condition {
                             .records
                             .read()
                             .expect("RwLock poisoned");
-                        let additional_results: HashSet<Record> =
-                            HashSet::from_iter(series.iter().cloned());
-                        results.extend(additional_results);
+                        results.append(&mut series.clone());
                     }
                 }
-                results
+                ResultSet { data: results }
             }
-            _ => HashSet::new(),
+            _ => ResultSet { data: vec![] },
         }
     }
 }
