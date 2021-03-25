@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -47,6 +48,13 @@ impl Record {
             .map(|(x, y)| format!("{}={}", x, y))
             .collect()
     }
+
+    fn get_variables(&self) -> Vec<String> {
+        self.variables
+            .iter()
+            .map(|(x, y)| format!("{}={}", x, y))
+            .collect()
+    }
 }
 impl fmt::Display for Record {
     // Formatter.
@@ -58,6 +66,15 @@ impl fmt::Display for Record {
         )
     }
 }
+impl Hash for Record {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        self.get_labels().hash(state);
+        self.get_variables().hash(state);
+        self.timestamp.hash(state);
+    }
+}
+impl Eq for Record {}
 
 #[cfg(test)]
 mod test {
