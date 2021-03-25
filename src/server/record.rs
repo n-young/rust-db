@@ -56,6 +56,13 @@ impl Record {
             .collect()
     }
 
+    pub fn get_metrics(&self) -> Vec<String> {
+        self.variables
+            .iter()
+            .map(|(x, _y)| format!("{}", x))
+            .collect()
+    }
+
     pub fn get_timestamp(&self) -> DateTime<Utc> {
         self.timestamp
     }
