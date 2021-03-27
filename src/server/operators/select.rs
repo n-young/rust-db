@@ -18,7 +18,7 @@ impl Select {
 #[derive(Debug, Clone)]
 pub struct ResultSet {
     // Assumed sorted by timestamp; must maintain invariant.
-    data: Vec<Record>
+    data: Vec<Record>,
 }
 
 impl ResultSet {
@@ -39,7 +39,6 @@ impl ResultSet {
                 i += 1;
                 j += 1;
             }
-                
         }
         res.append(&mut Vec::from(self.data.get(i..).unwrap()));
         res.append(&mut Vec::from(other.data.get(j..).unwrap()));
@@ -61,7 +60,6 @@ impl ResultSet {
                 i += 1;
                 j += 1;
             }
-                
         }
         ResultSet { data: res }
     }
@@ -117,7 +115,7 @@ pub struct Condition {
 
 impl Condition {
     fn eval(&self, shared_block: &Arc<RwLock<Block>>) -> ResultSet {
-        if (self.lhs.is_labelkey() && self.rhs.is_labelvalue()) {
+        if self.lhs.is_labelkey() && self.rhs.is_labelvalue() {
             match self.op {
                 Op::Eq => {
                     let label = format!("{}={}", self.lhs.eval(), self.rhs.eval());
@@ -136,8 +134,22 @@ impl Condition {
                 }
                 _ => ResultSet { data: vec![] },
             }
-        } else if (self.lhs.is_variable() && self.rhs.is_metric()) {
-            // TODO: Finish metric evaluation
+        } else if self.lhs.is_variable() && self.rhs.is_metric() {
+            let metric = self.lhs.eval();
+            let mut results: Vec<Record> = vec![];
+            let block = shared_block.read().expect("RwLock poisoned");
+            if let Some(rb) = block.index.get(&metric) {
+                for id in rb.iter() {
+                    let series = block.storage[id as usize]
+                        .records
+                        .read()
+                        .expect("RwLock poisoned");
+                    // TODO: filter data points by metric and add to results
+                }
+            }
+            ResultSet { data: results }
+        } else {
+            panic!();
         }
     }
 }
@@ -162,29 +174,29 @@ impl Type {
 
     fn is_labelkey(&self) -> bool {
         match self {
-            Type::LabelKey => true,
-            _ => false
+            Type::LabelKey(_) => true,
+            _ => false,
         }
     }
 
     fn is_labelvalue(&self) -> bool {
         match self {
-            Type::LabelValue => true,
-            _ => false
+            Type::LabelValue(_) => true,
+            _ => false,
         }
     }
 
     fn is_variable(&self) -> bool {
         match self {
-            Type::Variable => true,
-            _ => false
+            Type::Variable(_) => true,
+            _ => false,
         }
     }
 
     fn is_metric(&self) -> bool {
         match self {
-            Type::Metric => true,
-            _ => false
+            Type::Metric(_) => true,
+            _ => false,
         }
     }
 }
@@ -200,14 +212,14 @@ pub enum Op {
 }
 
 impl Op {
-    fn get_op(&self) -> Box<Fn(String, f64) -> bool> {
+    fn get_op(&self) -> Box<dyn Fn(f64, f64) -> bool> {
         match self {
             Op::Eq => Box::new(move |a, b| a == b),
             Op::NEq => Box::new(move |a, b| a != b),
             Op::Gt => Box::new(move |a, b| a > b),
             Op::Lt => Box::new(move |a, b| a < b),
             Op::GtEq => Box::new(move |a, b| a >= b),
-            Op::LtEq => Box::new(move |a, b| a <= b), 
+            Op::LtEq => Box::new(move |a, b| a <= b),
         }
     }
 }

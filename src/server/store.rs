@@ -13,7 +13,6 @@ pub struct Block {
     pub index: HashMap<String, RoaringBitmap>,
     pub storage: Vec<Series>,
     id_map: Vec<String>,
-    // TODO: Index over metrics as well, can put it here
     key_map: HashMap<String, usize>,
 }
 
@@ -84,8 +83,9 @@ fn db_write(write_rx: Receiver<Record>, shared_block: Arc<RwLock<Block>>) {
             .push(Series::new(id.clone(), key.clone(), received.clone()));
         block.id_map.push(key.clone());
         block.key_map.insert(key, id.clone());
-        // Insert label into the fst
-        let labels = received.get_labels();
+        // Insert label key-value pairs and metrics into the fst
+        let mut labels = received.get_labels();
+        labels.append(&mut received.get_metrics());
         for label in labels {
             // Check if label is in fst
             match block.index.get_mut(&label) {
