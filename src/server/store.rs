@@ -1,5 +1,5 @@
 use crate::server::{execute::SelectRequest, record::Record};
-//use fst::{Map, MapBuilder};
+use fst::{Map, MapBuilder};
 use roaring::RoaringBitmap;
 use std::{
     collections::HashMap,
@@ -7,8 +7,11 @@ use std::{
     thread,
 };
 
+// Block Struct.
 pub struct Block {
-    // TODO: Fix fst lol
+    // TODO: Get this to work with FSTs
+    // TODO: Do we want this index to work over both labels and metrics?
+    //      We should probably split it up...?
     // index: fst::MapBuilder<RoaringBitmap>,
     pub index: HashMap<String, RoaringBitmap>,
     pub storage: Vec<Series>,
@@ -69,12 +72,14 @@ fn db_write(write_rx: Receiver<Record>, shared_block: Arc<RwLock<Block>>) {
     for received in write_rx {
         let key: String = received.get_key();
         let mut block = shared_block.write().expect("RwLock poisoned");
+
         // Check if this series exists in the block
         if let Some(id) = block.key_map.get(&key) {
             println!("Received a familiar key!");
             block.storage[*id].insert(received);
             continue;
         }
+
         // Key does not exist in the block
         println!("First time seeing this key.");
         let id = block.storage.len();
@@ -83,11 +88,11 @@ fn db_write(write_rx: Receiver<Record>, shared_block: Arc<RwLock<Block>>) {
             .push(Series::new(id.clone(), key.clone(), received.clone()));
         block.id_map.push(key.clone());
         block.key_map.insert(key, id.clone());
+
         // Insert label key-value pairs and metrics into the fst
         let mut labels = received.get_labels();
         labels.append(&mut received.get_metrics());
         for label in labels {
-            // Check if label is in fst
             match block.index.get_mut(&label) {
                 Some(rb) => {
                     rb.insert(id as u32);
@@ -98,9 +103,6 @@ fn db_write(write_rx: Receiver<Record>, shared_block: Arc<RwLock<Block>>) {
                     block.index.insert(label, new_rb);
                 }
             }
-            // If so, get bitset and add id to ibtset
-            // if not, add label to fst, create bitset, and init with id
-            //            let bitset = block.index.insert(labe);
         }
     }
 }

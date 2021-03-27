@@ -7,7 +7,6 @@ pub struct SelectRequest {
     pub statement: Select,
     result_tx: Sender<Vec<Record>>,
 }
-
 impl SelectRequest {
     // Constructor.
     fn new(s: Select) -> (Self, Receiver<Vec<Record>>) {

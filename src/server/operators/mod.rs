@@ -1,16 +1,14 @@
 pub mod select;
 
 use serde::{Deserialize, Serialize};
-
 use crate::server::record::Record;
+pub use select::Select;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum Op {
     Select(select::Select),
     Write(Record),
 }
-
-pub use select::Select;
 
 #[cfg(test)]
 mod test {

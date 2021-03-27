@@ -42,6 +42,7 @@ impl Record {
         temp_key
     }
 
+    // Get labels.
     pub fn get_labels(&self) -> Vec<String> {
         self.labels
             .iter()
@@ -49,6 +50,7 @@ impl Record {
             .collect()
     }
 
+    // Get variables.
     fn get_variables(&self) -> Vec<String> {
         self.variables
             .iter()
@@ -56,6 +58,7 @@ impl Record {
             .collect()
     }
 
+    // Get metrics.
     pub fn get_metrics(&self) -> Vec<String> {
         self.variables
             .iter()
@@ -63,6 +66,7 @@ impl Record {
             .collect()
     }
 
+    // Get timestamp.
     pub fn get_timestamp(&self) -> DateTime<Utc> {
         self.timestamp
     }
@@ -85,7 +89,7 @@ impl Hash for Record {
         self.timestamp.hash(state);
     }
 }
-impl Eq for Record {}
+
 
 #[cfg(test)]
 mod test {
