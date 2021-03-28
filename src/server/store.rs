@@ -36,7 +36,18 @@ impl Block {
     pub fn search_index(&self, key: String) -> Option<&BitmapWrapper> {
         self.index.get(&key)
     }
+
+    pub fn into_bytes(&self) -> &[u8] {
+      // TODO: Implement this
+      ()
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+      // TODO: Implement this
+      ()
+    }
 }
+
 
 // Series struct.
 pub struct Series {

@@ -208,6 +208,7 @@ impl Condition {
 #[derive(Debug, Clone)]
 pub struct ResultSet {
     data: Vec<Record>, // Assumed sorted.
+    // packed: bool, // TODO: Write this correctly
 }
 impl ResultSet {
     // Union two RSs. Assumes both are sorted by timestamp.
