@@ -42,6 +42,13 @@ impl Type {
         }
     }
 
+    fn extract_metric(&self) -> f64 {
+        match self {
+            Type::Metric(v) => *v,
+            _ => panic!(),
+        }
+    }
+
     fn is_labelkey(&self) -> bool {
         match self {
             Type::LabelKey(_) => true,
@@ -134,6 +141,8 @@ pub struct Condition {
     op: Op,
 }
 impl Condition {
+    // NOTE: I think it might be faster to iterate through each block / record and apply the entire conditional to it at once,
+    // rather than getting many ResultSets and having to union/intersect them... but we'll see.
     fn eval(&self, shared_block: &Arc<RwLock<Block>>) -> ResultSet {
         // In the label=value case, the only operation is equality.
         if self.lhs.is_labelkey() && self.rhs.is_labelvalue() {
@@ -164,19 +173,24 @@ impl Condition {
             }
         }
         
-        // TODO: This.
         // In the variable=metric case, we extract the operation and iterate.
         else if self.lhs.is_variable() && self.rhs.is_metric() {
+            // Get block.
             let metric = self.lhs.to_string();
             let mut results: Vec<Record> = vec![];
             let block = shared_block.read().expect("RwLock poisoned");
+
+            // Iterate through and filter all blocks that contain the given metric.
             if let Some(rb) = block.index.get(&metric) {
                 for id in rb.iter() {
+                    let op = self.op.get_op();
                     let series = block.storage[id as usize]
                         .records
                         .read()
                         .expect("RwLock poisoned");
-                    // TODO: filter data points by metric and add to results
+                    let mut unfiltered = series.clone().iter();
+                    let filtered = &mut unfiltered.filter(|x| op(*x.get_metric(self.lhs.to_string()).unwrap(), self.rhs.extract_metric()));
+                    results.append(&mut filtered.cloned().collect());
                 }
             }
             ResultSet { data: results }

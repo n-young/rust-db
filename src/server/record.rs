@@ -51,11 +51,16 @@ impl Record {
     }
 
     // Get variables.
-    fn get_variables(&self) -> Vec<String> {
+    pub fn get_variables(&self) -> Vec<String> {
         self.variables
             .iter()
             .map(|(x, y)| format!("{}={}", x, y))
             .collect()
+    }
+
+    // Get a particular metric.
+    pub fn get_metric(&self, key: String) -> Option<&f64> {
+        self.variables.get(key)
     }
 
     // Get metrics.
