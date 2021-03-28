@@ -155,9 +155,9 @@ impl Condition {
                     let block = shared_block.read().expect("RwLock poisoned");
 
                     // Append all relevant series retrieved through the label index.
-                    if let Some(rb) = block.index.get(&label) {
+                    if let Some(rb) = block.search_index(label) {
                         for id in rb.iter() {
-                            let series = block.storage[id as usize]
+                            let series = block.get_storage()[id as usize]
                                 .records
                                 .read()
                                 .expect("RwLock poisoned");
@@ -181,14 +181,14 @@ impl Condition {
             let block = shared_block.read().expect("RwLock poisoned");
 
             // Iterate through and filter all blocks that contain the given metric.
-            if let Some(rb) = block.index.get(&metric) {
+            if let Some(rb) = block.search_index(metric) {
                 for id in rb.iter() {
                     let op = self.op.get_op();
-                    let series = block.storage[id as usize]
+                    let series = block.get_storage()[id as usize]
                         .records
                         .read()
                         .expect("RwLock poisoned");
-                    let mut unfiltered = series.clone().iter();
+                    let unfiltered = series.iter();
                     let filtered = &mut unfiltered.filter(|x| op(*x.get_metric(self.lhs.to_string()).unwrap(), self.rhs.extract_metric()));
                     results.append(&mut filtered.cloned().collect());
                 }

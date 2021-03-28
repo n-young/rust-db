@@ -12,15 +12,15 @@ pub struct Block {
     // TODO: Get this to work with FSTs
     // TODO: Do we want this index to work over both labels and metrics?
     //      We should probably split it up...?
-    // index: fst::MapBuilder<RoaringBitmap>,
-    pub index: HashMap<String, RoaringBitmap>,
-    pub storage: Vec<Series>,
+    // pub index: fst::MapBuilder<RoaringBitmap>,
+    index: HashMap<String, RoaringBitmap>,
+    storage: Vec<Series>,
     id_map: Vec<String>,
     key_map: HashMap<String, usize>,
 }
 
 impl Block {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Block {
             // index: fst::MapBuilder::memory(),
             index: HashMap::new(),
@@ -28,6 +28,14 @@ impl Block {
             id_map: vec![],
             key_map: HashMap::new(),
         }
+    }
+
+    pub fn get_storage(&self) -> &Vec<Series> {
+        &self.storage
+    }
+
+    pub fn search_index(&self, key: String) -> Option<&RoaringBitmap> {
+        self.index.get(&key)
     }
 }
 

@@ -15,7 +15,7 @@ pub struct Record {
 }
 
 impl Record {
-    // Constructor.
+    // Constructor. TODO: Remove?
     pub fn new(
         name: String,
         labels: HashMap<String, String>,
@@ -60,7 +60,7 @@ impl Record {
 
     // Get a particular metric.
     pub fn get_metric(&self, key: String) -> Option<&f64> {
-        self.variables.get(key)
+        self.variables.get(&key)
     }
 
     // Get metrics.
