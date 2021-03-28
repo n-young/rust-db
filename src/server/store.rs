@@ -11,6 +11,8 @@ pub struct Block {
     // TODO: Get this to work with FSTs
     // TODO: Do we want this index to work over both labels and metrics?
     //      We should probably split it up...?
+    // TODO: Have time ranges in the block.
+    // TODO: Have an indicator for if the block is frozen or not
     index: MapBuilder<BitmapWrapper>,
     // index: HashMap<String, RoaringBitmap>,
     storage: Vec<Series>,
