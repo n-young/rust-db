@@ -1,10 +1,9 @@
-use crate::server::{execute::SelectRequest, record::Record};
+use crate::server::{execute::SelectRequest, record::Record, bitmap::BitmapWrapper};
 use fst::{Map, MapBuilder};
-use roaring::RoaringBitmap;
 use std::{
     collections::HashMap,
     sync::{mpsc::Receiver, Arc, RwLock},
-    thread,
+    thread
 };
 
 // Block Struct.
@@ -12,8 +11,8 @@ pub struct Block {
     // TODO: Get this to work with FSTs
     // TODO: Do we want this index to work over both labels and metrics?
     //      We should probably split it up...?
-    // pub index: fst::MapBuilder<RoaringBitmap>,
-    index: HashMap<String, RoaringBitmap>,
+    index: MapBuilder<BitmapWrapper>,
+    // index: HashMap<String, RoaringBitmap>,
     storage: Vec<Series>,
     id_map: Vec<String>,
     key_map: HashMap<String, usize>,
@@ -22,8 +21,8 @@ pub struct Block {
 impl Block {
     pub fn new() -> Self {
         Block {
-            // index: fst::MapBuilder::memory(),
-            index: HashMap::new(),
+            index: MapBuilder::new(BitmapWrapper::new()).unwrap(),
+            // index: HashMap::new(),
             storage: vec![],
             id_map: vec![],
             key_map: HashMap::new(),
@@ -34,7 +33,7 @@ impl Block {
         &self.storage
     }
 
-    pub fn search_index(&self, key: String) -> Option<&RoaringBitmap> {
+    pub fn search_index(&self, key: String) -> Option<&BitmapWrapper> {
         self.index.get(&key)
     }
 }
@@ -106,7 +105,7 @@ fn db_write(write_rx: Receiver<Record>, shared_block: Arc<RwLock<Block>>) {
                     rb.insert(id as u32);
                 }
                 None => {
-                    let mut new_rb = RoaringBitmap::new();
+                    let mut new_rb = BitmapWrapper::new();
                     new_rb.insert(id as u32);
                     block.index.insert(label, new_rb);
                 }

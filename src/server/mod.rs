@@ -1,3 +1,4 @@
+mod bitmap;
 mod execute;
 mod operators;
 mod record;
