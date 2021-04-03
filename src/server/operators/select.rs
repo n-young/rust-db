@@ -292,7 +292,6 @@ impl ResultSet {
                 None => continue,
             }
         }
-        // TODO: does this mutate ourself?
         self.data = data;
         self.unpacked = true;
     }
