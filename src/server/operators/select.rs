@@ -214,7 +214,12 @@ impl Condition {
         }
         // We disallow everything that isn't label=value or variable=metric.
         else {
-            panic!();
+            return ResultSet {
+                unpacked: false,
+                data: vec![],
+                series: RoaringBitmap::new(),
+                filters: vec![],
+            };
         }
     }
 }
