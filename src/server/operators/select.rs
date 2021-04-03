@@ -118,7 +118,11 @@ impl Conditions {
     fn eval(&self, shared_block: &Arc<RwLock<Block>>) -> ResultSet {
         match self {
             // If a Leaf, return results.
-            Conditions::Leaf(cond) => cond.eval(shared_block),
+            Conditions::Leaf(cond) => {
+                let mut r = cond.eval(shared_block);
+                r.unpack(shared_block);
+                r
+            }
             // If an And, intersect the results.
             Conditions::And(b1, b2) => {
                 let mut r1 = (*b1).eval(shared_block);
