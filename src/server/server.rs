@@ -1,20 +1,19 @@
+use crate::server::{
+    execute::{execute, SelectRequest},
+    record::Record,
+    store::db_open,
+};
+use bincode::{deserialize_from, serialize_into};
 use std::{
     io,
     net::{Shutdown, TcpListener, TcpStream},
     sync::mpsc::{channel, Sender},
     thread,
 };
-use bincode::{deserialize_from, serialize_into};
-use crate::server::{
-    execute::{execute, SelectRequest},
-    record::Record,
-    store::db_open,
-};
 
 // Process a vector of records into a String.
 fn postprocess(result: Vec<Record>) -> String {
-    let _ = result;
-    String::from("Processed some records")
+    format!("{:?}", result)
 }
 
 // Takes a new client connection and executes input.
