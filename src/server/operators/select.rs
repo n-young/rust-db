@@ -222,6 +222,21 @@ pub struct ResultSet {
     series: RoaringBitmap,
     filters: Vec<(String, Box<dyn Fn(f64) -> bool>)>,
 }
+
+fn pass_filters(record: &Record, filters: &Vec<(String, Box<dyn Fn(f64) -> bool>)>) -> bool {
+    for (metric, filter) in filters.iter() {
+        match record.get_metric(metric.to_string()) {
+            Some(val) => {
+                if !filter(*val) {
+                    return false;
+                }
+            }
+            None => return false,
+        }
+    }
+    return true;
+}
+
 impl ResultSet {
     pub fn unpack(&mut self, shared_block: &Arc<RwLock<Block>>) {
         // Unpacking happens only once
