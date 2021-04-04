@@ -56,8 +56,6 @@ fn handle_tcp_connection(
 
 // Opens the server.
 pub fn server() {
-    // TODO: Construct index in here.
-    
     // Open the db and create read/write channels
     let (read_tx, read_rx) = channel();
     let (write_tx, write_rx) = channel();
