@@ -17,6 +17,7 @@ use std::convert::TryInto;
 const HEADER_SIZE: usize = 7;
 const FLUSH_FREQUENCY: u32 = 10;
 
+// TODO: Split this file up somewhat
 // BlockIndex Struct.
 pub struct BlockIndex {
     // Map from start_timestamp to filename
@@ -42,7 +43,9 @@ impl BlockIndex {
 
     pub fn populate_manually(&mut self) {
         // For each file in the dir...
-        let dir = fs::read_dir(format!("{}/blocks", dotenv::var("DATAROOT").unwrap())).unwrap();
+        let filepath = format!("{}/blocks", dotenv::var("DATAROOT").unwrap());
+        fs::create_dir_all(&filepath).expect("ERROR: issue creating block dir.");
+        let dir = fs::read_dir(filepath).unwrap();
         for f in dir {
             // Get the filename, get the key, insert into the Index.
             let filepath_a = f.unwrap().path();
@@ -58,9 +61,11 @@ impl BlockIndex {
         let block_bytes = block.to_bytes();
 
         // Parse filename.
-        let block_filename = format!("{}/blocks/{}_{}.rdb", dotenv::var("DATAROOT").unwrap(), block.start_timestamp.unwrap().timestamp(), block.end_timestamp.unwrap().timestamp());
-
+        let filepath = format!("{}/blocks", dotenv::var("DATAROOT").unwrap());
+        let block_filename = format!("{}/{}_{}.rdb", filepath, block.start_timestamp.unwrap().timestamp(), block.end_timestamp.unwrap().timestamp());
+        
         // Write bytes to filename.
+        fs::create_dir_all(&filepath).expect("ERROR: issue creating block dir.");
         fs::write(&block_filename, block_bytes).expect("ERROR: writing block to disk");
 
         // Insert new block reference into index.
@@ -278,7 +283,10 @@ impl Series {
 // Ingests a read operation.
 fn db_read(read_rx: Receiver<SelectRequest>, shared_block: Arc<RwLock<Block>>, shared_index: Arc<RwLock<BlockIndex>>) {// Receive read operations from the server
     for request in read_rx {
+        // TODO: Remove this
         println!("{:?}", shared_index.read().unwrap().index);
+
+        // Eval statement and reply.
         let statement = request.statement.clone();
         println!("Received statement: {:?}", statement);
         let result = statement.eval(&shared_block);
@@ -344,6 +352,7 @@ pub fn db_open(read_rx: Receiver<SelectRequest>, write_rx: Receiver<Record>) {
     let shared_block = Arc::new(RwLock::new(Block::new()));
 
     // Create an in-memory index, populated from disk.
+    fs::create_dir_all(format!("{}", dotenv::var("DATAROOT").unwrap())).expect("ERROR: issue creating data dir.");
     let index = BlockIndex::from_disk(format!("{}/index.rdb", dotenv::var("DATAROOT").unwrap()));
     let shared_index = Arc::new(RwLock::new(index));
 
