@@ -7,3 +7,7 @@ This is a timeseries database written in Rust. It supports inserts and queries i
 ## Design Decisions
 - Only allowing key = label or metric = value; not the other way around
 - Considering only allowing key=label AND metric=value; disallowing unbounded metrics?
+
+## TODO
+- Try using FSTs
+- Get rid of the jank index serialization.
