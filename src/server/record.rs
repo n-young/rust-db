@@ -1,3 +1,4 @@
+extern crate bincode;
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -15,7 +16,7 @@ pub struct Record {
 }
 
 impl Record {
-    // Constructor. TODO: Remove?
+    // Constructor.
     pub fn new(
         name: String,
         labels: HashMap<String, String>,
@@ -74,6 +75,16 @@ impl Record {
     // Get timestamp.
     pub fn get_timestamp(&self) -> DateTime<Utc> {
         self.timestamp
+    }
+
+    // Convert to bytes.
+    pub fn into_bytes(&self) -> Vec<u8> {
+        bincode::serialize(self).unwrap()
+    }
+
+    // Convert from bytes.
+    pub fn from_bytes(data: &[u8]) -> Self {
+        bincode::deserialize(data).unwrap()
     }
 }
 impl fmt::Display for Record {
