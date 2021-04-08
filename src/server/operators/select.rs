@@ -1,7 +1,7 @@
 use crate::server::record::Record;
 use crate::server::store::Block;
+use croaring::bitmap::Bitmap;
 use priority_queue::PriorityQueue;
-use roaring::RoaringBitmap;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, RwLock};
 
@@ -174,7 +174,7 @@ impl Condition {
                     return ResultSet {
                         unpacked: false,
                         data: vec![],
-                        series: RoaringBitmap::new(),
+                        series: Bitmap::create(),
                         filters: vec![],
                     };
                 }
@@ -182,7 +182,7 @@ impl Condition {
                 _ => ResultSet {
                     unpacked: false,
                     data: vec![],
-                    series: RoaringBitmap::new(),
+                    series: Bitmap::create(),
                     filters: vec![],
                 },
             }
@@ -208,7 +208,7 @@ impl Condition {
             return ResultSet {
                 unpacked: false,
                 data: vec![],
-                series: RoaringBitmap::new(),
+                series: Bitmap::create(),
                 filters: vec![],
             };
         }
@@ -217,7 +217,7 @@ impl Condition {
             return ResultSet {
                 unpacked: false,
                 data: vec![],
-                series: RoaringBitmap::new(),
+                series: Bitmap::create(),
                 filters: vec![],
             };
         }
@@ -228,7 +228,7 @@ impl Condition {
 pub struct ResultSet {
     unpacked: bool,
     data: Vec<Record>, // Assumed sorted.
-    series: RoaringBitmap,
+    series: Bitmap,
     filters: Vec<(String, Box<dyn Fn(f64) -> bool>)>,
 }
 
@@ -301,7 +301,7 @@ impl ResultSet {
         // Check if both sets are unpacked and filterless
         if !self.unpacked && !other.unpacked && self.filters.len() == 0 && other.filters.len() == 0
         {
-            self.series.union_with(&other.series);
+            self.series.or_inplace(&other.series);
             return;
         }
         // Unpack both sets
@@ -336,7 +336,7 @@ impl ResultSet {
     pub fn intersection(&mut self, mut other: ResultSet, shared_block: &Arc<RwLock<Block>>) {
         // Check if both result sets are unpacked
         if !self.unpacked && !other.unpacked {
-            self.series.intersect_with(&other.series);
+            self.series.and_inplace(&other.series);
             self.filters.append(&mut Vec::from(other.filters));
             return;
         }
