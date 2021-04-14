@@ -5,18 +5,18 @@ use priority_queue::PriorityQueue;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, RwLock};
 
-// Predicate Struct.
+// Predicate Struct. TODO: Make fields private.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct Predicate {
-    name: String,
-    condition: Conditions,
+    pub name: String,
+    pub condition: Conditions,
 }
 
-// Select Struct.
+// Select Struct. TODO: Make fields private.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct Select {
-    name: String,
-    predicate: Predicate,
+    pub name: String,
+    pub predicate: Predicate,
 }
 impl Select {
     pub fn eval(&self, shared_block: &Arc<RwLock<Block>>) -> ResultSet {
