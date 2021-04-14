@@ -17,13 +17,13 @@ use uuid::Uuid;
 // CONSTANTS
 // TODO: Put these in their own file
 const HEADER_SIZE: usize = 7;
-const FLUSH_FREQUENCY: u32 = 1000;
+const FLUSH_FREQUENCY: u32 = 10;
 
 // TODO: Break this file up.
 
 // BlockIndex Struct.
 pub struct BlockIndex {
-    index: BTreeMap<i64, String> // Map from start_timestamp (millis) to filename
+    index: BTreeMap<i64, Vec<String>> // Map from start_timestamp (millis) to filename
 }
 impl BlockIndex {
     // Constructor.
@@ -32,13 +32,22 @@ impl BlockIndex {
         BlockIndex { index }
     }
 
+    // Insert into index.
+    pub fn insert(&mut self, key: i64, filepath: String) {
+        if self.index.contains_key(&key) {
+            self.index.get_mut(&key).unwrap().push(filepath);
+        } else {
+            self.index.insert(key, vec![filepath]);
+        }
+    }
+
     // Constructor using path to data folder (should be specified in .env).
     pub fn from_disk(path: String) -> Self {
         let file = File::open(path);
         if let Ok(mut f) = file {
             let mut buffer = vec![];
             f.read_to_end(&mut buffer).expect("ERROR: issue reading index from disk.");
-            let index = bincode::deserialize::<BTreeMap<i64, String>>(&buffer).unwrap();
+            let index = bincode::deserialize::<BTreeMap<i64, Vec<String>>>(&buffer).unwrap();
             BlockIndex { index }
         } else {
             BlockIndex::new()
@@ -60,7 +69,7 @@ impl BlockIndex {
             // Unpack the given file.
             let packed_block = PackedBlock::from_filepath(filepath.clone());
             let key = packed_block.start_timestamp.unwrap().timestamp_millis();
-            self.index.insert(key, filepath);
+            self.insert(key, filepath);
         }
     }
 
@@ -78,7 +87,7 @@ impl BlockIndex {
         fs::write(&block_filename, block_bytes).expect("ERROR: writing block to disk");
 
         // Insert new block reference into index.
-        self.index.insert(block.start_timestamp.unwrap().timestamp_millis(), block_filename);
+        self.insert(block.start_timestamp.unwrap().timestamp_millis(), block_filename);
 
         // Rewrite index to disk.
         let index_filename = format!("{}/index.rdb", dotenv::var("DATAROOT").unwrap());
@@ -94,9 +103,11 @@ impl BlockIndex {
         // For each block in the index...
         let mut ret = vec![];
         for (_, v) in self.index.iter() {
-            // Unpack the given file.
-            let packed_block = PackedBlock::from_filepath(v.clone());
-            ret.push(packed_block);
+            for f in v.iter() {
+                // Unpack the given file.
+                let packed_block = PackedBlock::from_filepath(f.clone());
+                ret.push(packed_block);
+            }
         }
         ret
     }
@@ -106,9 +117,11 @@ impl BlockIndex {
         // For each block in the index...
         let mut ret = vec![];
         for (_, v) in self.index.range(start_timestamp.timestamp_millis()..end_timestamp.timestamp_millis()) {
-            // Unpack the given file.
-            let packed_block = PackedBlock::from_filepath(v.clone());
-            ret.push(packed_block);
+            for f in v.iter() {
+                // Unpack the given file.
+                let packed_block = PackedBlock::from_filepath(f.clone());
+                ret.push(packed_block);
+            }
         }
         ret
     }
@@ -132,7 +145,7 @@ impl Block {
             storage: vec![],
             id_map: vec![],
             key_map: HashMap::new(),
-            start_timestamp: Some(Utc::now()),
+            start_timestamp: None,
             end_timestamp: None,
             frozen: false,
         }
@@ -152,7 +165,6 @@ impl Block {
     pub fn to_bytes(&mut self) -> Vec<u8> {
         // Freeze and cap the block.
         self.frozen = true;
-        self.end_timestamp = Some(Utc::now());
         
         // Serializing the block's parts.
         let serialized_start_timestamp = self.start_timestamp.unwrap().timestamp_millis().to_le_bytes().to_vec();
@@ -241,7 +253,7 @@ impl Block {
         self.storage = vec![];
         self.id_map = vec![];
         self.key_map = HashMap::new();
-        self.start_timestamp = Some(Utc::now());
+        self.start_timestamp = None;
         self.end_timestamp = None;
         self.frozen = false;
     }
@@ -366,13 +378,11 @@ fn db_write(write_rx: Receiver<Record>, shared_block: Arc<RwLock<Block>>, shared
 
         // Check if this series exists in the block
         if let Some(id) = block.key_map.get(&key) {
-            println!("Received a familiar key!");
-            block.storage[*id].insert(received);
+            block.storage[*id].insert(received.clone());
         }
 
         // Key does not exist in the block
         else {
-            println!("First time seeing this key.");
             let id = block.storage.len();
             block
                 .storage
@@ -395,8 +405,14 @@ fn db_write(write_rx: Receiver<Record>, shared_block: Arc<RwLock<Block>>, shared
                     }
                 }
             }
-
         }
+
+        // Update block timeranges
+        if block.start_timestamp.is_none() {
+            block.start_timestamp = Some(received.clone().get_timestamp().clone());
+        }
+        block.end_timestamp = Some(received.clone().get_timestamp().clone());
+
         // After write, consider flushing.
         counter = counter + 1;
         if counter % FLUSH_FREQUENCY == 0 {
