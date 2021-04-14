@@ -143,12 +143,12 @@ impl Conditions {
     }
 }
 
-// Condition Struct.
+// Condition Struct. TODO: Make fields private.
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct Condition {
-    lhs: Type,
-    rhs: Type,
-    op: Op,
+    pub lhs: Type,
+    pub rhs: Type,
+    pub op: Op,
 }
 
 impl Condition {
