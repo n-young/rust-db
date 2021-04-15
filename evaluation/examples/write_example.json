@@ -1,0 +1,29 @@
+{
+    "Write": {
+        "name": "nginx",
+        "labels": {
+            "hostname": "host_1",
+            "region": "us-west-2",
+            "datacenter": "us-west-2b",
+            "rack": "12",
+            "os": "Ubuntu15.10",
+            "arch": "x64",
+            "team": "CHI",
+            "service": "18",
+            "service_version": "1",
+            "service_environment": "production",
+            "port": "19496",
+            "server": "nginx_70358"
+        },
+        "variables": {
+            "accepts": 4.0,
+            "active": 5.0,
+            "handled": 4.0,
+            "reading": 2.0,
+            "requests": 5.0,
+            "waiting": 8.0,
+            "writing": 5.0
+        },
+        "timestamp": "2016-01-01 00:00:01+00:00"
+    }
+}
