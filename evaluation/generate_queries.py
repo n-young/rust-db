@@ -1,10 +1,5 @@
 #! /usr/bin/env python3
 
-# ==================================
-# Generates queries for a given
-# workload given its workload.
-# ==================================
-
 import json
 import math
 import numpy as np
@@ -12,13 +7,18 @@ import random
 random.seed(1)
 import sys
 
+# ==================================
+# Generates queries for a given
+# workload given its workload.
+# ==================================
+
 # Define hyperparameters
 NUM_QUERIES = 100 # Number of queries to generate
 MAX_HEIGHT = 3 # Maximum height of the query tree.
 FRAC_LABELS = 0.5 # Proportion of Leafs that are labels.
 FRAC_AND = 0.5 # Proportion of branches that are Ands.
 FRAC_VARIANCE = 0.5 # Proportion of each metric mean that we should be allowed to deviate from.
-ops = ["Eq", "NEq", "Gt", "Lt", "GtEq", "LtEq"]
+ops = ["Gt", "Lt", "GtEq", "LtEq"]
 
 # Function to get label and metric metadata given a filename.
 def get_metadata(filename):
