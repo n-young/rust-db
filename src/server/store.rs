@@ -86,6 +86,11 @@ impl BlockIndex {
         let index_filename = format!("{}/index.rdb", dotenv::var("DATAROOT").unwrap());
         fs::write(&index_filename, bincode::serialize(&self.index).unwrap()).expect("ERROR: writing index to disk");
 
+        // Print out block metadata.
+        println!("Number of series: {}", block.storage.len());
+        println!("Start timestamp: {}", block.start_timestamp.unwrap());
+        println!("End timestamp: {}", block.end_timestamp.unwrap());
+
         // Flush block from memory.
         block.flush();
         println!("Flushed block to disk.");
@@ -407,7 +412,15 @@ fn db_write(write_rx: Receiver<Record>, shared_block: Arc<RwLock<Block>>, shared
             }
 
         }
-        // After write, consider flushing. NOTE: Temporary.
+        // Update block timeranges.
+        if block.start_timestamp.is_none() || block.start_timestamp.unwrap() > received.clone().get_timestamp() {
+            block.start_timestamp = Some(received.clone().get_timestamp().clone());
+        }
+        if block.end_timestamp.is_none() || block.end_timestamp.unwrap() < received.clone().get_timestamp() {
+            block.end_timestamp = Some(received.clone().get_timestamp().clone());
+        }
+
+        // After write, consider flushing.
         counter = counter + 1;
         if counter % FLUSH_FREQUENCY == 0 {
             shared_index.write().expect("RwLock poisoined").update(&mut block);
