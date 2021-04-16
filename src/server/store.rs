@@ -324,23 +324,71 @@ impl PackedBlock {
 #[derive(Serialize, Deserialize)]
 pub struct Series {
     id: usize,
-    key: String,
-    pub records: RwLock<Vec<Record>>,
+    name: String,
+    labels: HashMap<String, String>,
+    variables: Vec<String>,
+    records: RwLock<Vec<SeriesRecord>>,
 }
 impl Series {
     // Constructor.
-    fn new(id: usize, key: String, record: Record) -> Self {
+    pub fn new(id: usize, record: Record) -> Self {
         Series {
             id: id,
-            key: key,
-            records: RwLock::new(vec![record]),
+            name: record.get_name(),
+            labels: record.get_populated_labels(),
+            variables: record.get_variables(),
+            records: RwLock::new(vec![SeriesRecord::from_record(record)]),
         }
     }
 
+    // Get key.
+    pub fn get_key(&self) -> String {
+        // Start with name.
+        let mut temp_key: String = self.name.clone();
+
+        // Sort labels and add to key.
+        let mut sorted_labels: Vec<_> = self.labels.iter().collect();
+        sorted_labels.sort_by_key(|x| x.0);
+        for (key, value) in sorted_labels.iter() {
+            temp_key.push_str(key);
+            temp_key.push_str(value);
+        }
+
+        // Sort variables and add to key.
+        let mut sorted_variables: Vec<_> = self.variables.clone();
+        sorted_variables.sort();
+        for variable in sorted_variables.iter() {
+            temp_key.push_str(variable);
+        }
+
+        // Return.
+        temp_key
+    }
+
+    // Get name.
+    pub fn get_name(&self) -> String {
+        self.name.clone()
+    }
+
+    // Get labels.
+    pub fn get_labels(&self) -> HashMap<String, String> {
+        self.labels.clone()
+    }
+
+    // Get variables.
+    pub fn get_variables(&self) -> Vec<String> {
+        self.variables.clone()
+    }
+
+    // Export records (SeriesRecord) to a Vec<Records>.
+    pub fn get_records(&self) -> Vec<Record> {
+        self.records.read().expect("RwLock poisoned").iter().map(|x| x.to_record(self)).collect()
+    }
+
     // Insert a record into this series.
-    fn insert(&self, record: Record) {
+    pub fn insert(&self, record: Record) {
         let mut v = self.records.write().expect("RwLock poisoned");
-        v.push(record);
+        v.push(SeriesRecord::from_record(record));
     }
 
     // Convert to bytes.
@@ -351,6 +399,32 @@ impl Series {
     // Convert from bytes.
     pub fn from_bytes(data: &[u8]) -> Self {
         bincode::deserialize(data).unwrap()
+    }
+}
+
+// SeriesRecord struct.
+#[derive(Serialize, Deserialize)]
+pub struct SeriesRecord {
+    metrics: Vec<f64>,
+    timestamp: i64
+}
+impl SeriesRecord {
+    pub fn from_record(record: Record) -> Self {
+        SeriesRecord {
+            metrics: record.get_populated_variables().values().cloned().collect(),
+            timestamp: record.get_timestamp().timestamp_millis()
+        }
+    }
+
+    pub fn to_record(&self, series: &Series) -> Record {
+        let ts_secs = (self.timestamp / 1000) as i64;
+        let ts_nanos = ((self.timestamp % 1000) * 1_000_000) as u32;
+        Record::new(
+            series.get_name(),
+            series.get_labels(),
+            series.get_variables().into_iter().zip(self.metrics.clone()).collect(),
+            DateTime::from_utc(NaiveDateTime::from_timestamp(ts_secs, ts_nanos), Utc)
+        )
     }
 }
 
@@ -386,7 +460,7 @@ fn db_write(write_rx: Receiver<Record>, shared_block: Arc<RwLock<Block>>, shared
             let id = block.storage.len();
             block
                 .storage
-                .push(Series::new(id.clone(), key.clone(), received.clone()));
+                .push(Series::new(id.clone(), received.clone()));
             block.id_map.push(key.clone());
             block.key_map.insert(key, id.clone());
 

@@ -33,14 +33,36 @@ impl Record {
 
     // Get key.
     pub fn get_key(&self) -> String {
+        // Start with name.
         let mut temp_key: String = self.name.clone();
+
+        // Sort labels and add to key.
         let mut sorted_labels: Vec<_> = self.labels.iter().collect();
         sorted_labels.sort_by_key(|x| x.0);
         for (key, value) in sorted_labels.iter() {
             temp_key.push_str(key);
             temp_key.push_str(value);
         }
+
+        // Sort variables and add to key.
+        let mut sorted_variables: Vec<_> = self.get_variables().clone();
+        sorted_variables.sort();
+        for variable in sorted_variables.iter() {
+            temp_key.push_str(variable);
+        }
+
+        // Return.
         temp_key
+    }
+
+    // Get name,
+    pub fn get_name(&self) -> String {
+        self.name.clone()
+    }
+
+    // Get populated labels.
+    pub fn get_populated_labels(&self) -> HashMap<String, String> {
+        self.labels.clone()
     }
 
     // Get labels.
@@ -49,6 +71,11 @@ impl Record {
             .iter()
             .map(|(x, y)| format!("{}={}", x, y))
             .collect()
+    }
+
+    // Get populated variables.
+    pub fn get_populated_variables(&self) -> HashMap<String, f64> {
+        self.variables.clone()
     }
 
     // Get variables.
