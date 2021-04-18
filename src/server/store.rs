@@ -1,5 +1,5 @@
 extern crate bincode;
-use crate::server::{execute::SelectRequest, record::Record};
+use crate::server::{execute::SelectRequest, record::Record, operators::process::dnf};
 use croaring::bitmap::Bitmap;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use dotenv;
@@ -13,6 +13,8 @@ use std::{
     sync::{mpsc::Receiver, Arc, RwLock, RwLockWriteGuard},
     thread};
 use uuid::Uuid;
+use serde_json::{Result, Value};
+use serde_json::json;
 
 // CONSTANTS
 // TODO: Put these in their own file
@@ -92,6 +94,11 @@ impl BlockIndex {
         // Rewrite index to disk.
         let index_filename = format!("{}/index.rdb", dotenv::var("DATAROOT").unwrap());
         fs::write(&index_filename, bincode::serialize(&self.index).unwrap()).expect("ERROR: writing index to disk");
+
+        // Print out block metadata.
+        println!("Number of series: {}", block.storage.len());
+        println!("Start timestamp: {}", block.start_timestamp.unwrap());
+        println!("End timestamp: {}", block.end_timestamp.unwrap());
 
         // Flush block from memory.
         block.flush();
@@ -359,8 +366,15 @@ fn db_read(read_rx: Receiver<SelectRequest>, shared_block: Arc<RwLock<Block>>, s
     for request in read_rx {
         // Eval statement and reply.
         let statement = request.statement.clone();
-        println!("Received statement: {:?}", statement);
-        let result = statement.eval(&shared_block);
+        println!("===================================");
+        println!("Received statement: {}", Value::to_string(&json!(statement)));
+
+        // Convert to DNF.
+        let dnf_statement = dnf(statement);
+        println!("===================================");
+        println!("Converted statement: {}", Value::to_string(&json!(dnf_statement)));
+
+        let result = dnf_statement.eval(&shared_block);
         request.reply(result.into_vec());
     }
 }
@@ -375,7 +389,8 @@ fn db_write(write_rx: Receiver<Record>, shared_block: Arc<RwLock<Block>>, shared
         // Get key and block.
         let key: String = received.get_key();
         let mut block = shared_block.write().expect("RwLock poisoned");
-
+        
+        // TODO: Shouldn't this be in the Block impl?
         // Check if this series exists in the block
         if let Some(id) = block.key_map.get(&key) {
             block.storage[*id].insert(received.clone());
@@ -407,11 +422,13 @@ fn db_write(write_rx: Receiver<Record>, shared_block: Arc<RwLock<Block>>, shared
             }
         }
 
-        // Update block timeranges
-        if block.start_timestamp.is_none() {
+        // Update block timeranges.
+        if block.start_timestamp.is_none() || block.start_timestamp.unwrap() > received.clone().get_timestamp() {
             block.start_timestamp = Some(received.clone().get_timestamp().clone());
         }
-        block.end_timestamp = Some(received.clone().get_timestamp().clone());
+        if block.end_timestamp.is_none() || block.end_timestamp.unwrap() < received.clone().get_timestamp() {
+            block.end_timestamp = Some(received.clone().get_timestamp().clone());
+        }
 
         // After write, consider flushing.
         counter = counter + 1;
