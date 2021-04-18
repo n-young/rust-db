@@ -260,10 +260,7 @@ impl ResultSet {
         let mut counter: usize = 0;
         // Get pointers to the start of all relevant series
         for id in self.series.iter() {
-            let series = block.get_storage()[id as usize]
-                .records
-                .read()
-                .expect("RwLock poisoned");
+            let series = block.get_storage()[id as usize].get_records();
             all_series.push(series.clone());
             positions.push(0);
             pq.push(counter, series[0].get_timestamp());
