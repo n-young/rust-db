@@ -1,20 +1,23 @@
 extern crate bincode;
-use crate::server::{execute::SelectRequest, record::Record, operators::process::dnf};
-use croaring::bitmap::Bitmap;
+use crate::server::{execute::SelectRequest, operators::process::dnf, record::Record};
 use chrono::{DateTime, NaiveDateTime, Utc};
+use croaring::bitmap::Bitmap;
 use dotenv;
-use serde::{Serialize, Deserialize};
+use fst::{IntoStreamer, Map, MapBuilder, Streamer};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use serde_json::{Result, Value};
 use std::{
-    collections::{HashMap, BTreeMap},
+    collections::{BTreeMap, HashMap},
     convert::TryInto,
     fs::{self, File},
     io::Read,
     mem::size_of,
+    str,
     sync::{mpsc::Receiver, Arc, RwLock, RwLockWriteGuard},
-    thread};
+    thread,
+};
 use uuid::Uuid;
-use serde_json::{Result, Value};
-use serde_json::json;
 
 // CONSTANTS
 // TODO: Put these in their own file
@@ -25,7 +28,7 @@ const FLUSH_FREQUENCY: u32 = 10;
 
 // BlockIndex Struct.
 pub struct BlockIndex {
-    index: BTreeMap<i64, Vec<String>> // Map from start_timestamp (millis) to filename
+    index: BTreeMap<i64, Vec<String>>, // Map from start_timestamp (millis) to filename
 }
 impl BlockIndex {
     // Constructor.
@@ -48,7 +51,8 @@ impl BlockIndex {
         let file = File::open(path);
         if let Ok(mut f) = file {
             let mut buffer = vec![];
-            f.read_to_end(&mut buffer).expect("ERROR: issue reading index from disk.");
+            f.read_to_end(&mut buffer)
+                .expect("ERROR: issue reading index from disk.");
             let index = bincode::deserialize::<BTreeMap<i64, Vec<String>>>(&buffer).unwrap();
             BlockIndex { index }
         } else {
@@ -83,17 +87,21 @@ impl BlockIndex {
         // Parse filename.
         let filepath = format!("{}/blocks", dotenv::var("DATAROOT").unwrap());
         let block_filename = format!("{}/{}.rdb", filepath, Uuid::new_v4().to_string());
-        
+
         // Write bytes to filename.
         fs::create_dir_all(&filepath).expect("ERROR: issue creating block dir.");
         fs::write(&block_filename, block_bytes).expect("ERROR: writing block to disk");
 
         // Insert new block reference into index.
-        self.insert(block.start_timestamp.unwrap().timestamp_millis(), block_filename);
+        self.insert(
+            block.start_timestamp.unwrap().timestamp_millis(),
+            block_filename,
+        );
 
         // Rewrite index to disk.
         let index_filename = format!("{}/index.rdb", dotenv::var("DATAROOT").unwrap());
-        fs::write(&index_filename, bincode::serialize(&self.index).unwrap()).expect("ERROR: writing index to disk");
+        fs::write(&index_filename, bincode::serialize(&self.index).unwrap())
+            .expect("ERROR: writing index to disk");
 
         // Print out block metadata.
         println!("Number of series: {}", block.storage.len());
@@ -120,10 +128,17 @@ impl BlockIndex {
     }
 
     // Get all blocks in a certain time range (by start times) in packed form.
-    pub fn get_packed_blocked_range(&self, start_timestamp: DateTime<Utc>, end_timestamp: DateTime<Utc>) -> Vec<PackedBlock> {
+    pub fn get_packed_blocked_range(
+        &self,
+        start_timestamp: DateTime<Utc>,
+        end_timestamp: DateTime<Utc>,
+    ) -> Vec<PackedBlock> {
         // For each block in the index...
         let mut ret = vec![];
-        for (_, v) in self.index.range(start_timestamp.timestamp_millis()..end_timestamp.timestamp_millis()) {
+        for (_, v) in self
+            .index
+            .range(start_timestamp.timestamp_millis()..end_timestamp.timestamp_millis())
+        {
             for f in v.iter() {
                 // Unpack the given file.
                 let packed_block = PackedBlock::from_filepath(f.clone());
@@ -143,6 +158,8 @@ pub struct Block {
     start_timestamp: Option<DateTime<Utc>>,
     end_timestamp: Option<DateTime<Utc>>,
     frozen: bool,
+    compressed_index: Option<Map<Vec<u8>>>,
+    compressed_bitmaps: Vec<Bitmap>,
 }
 impl Block {
     // Constructor.
@@ -155,6 +172,8 @@ impl Block {
             start_timestamp: None,
             end_timestamp: None,
             frozen: false,
+            compressed_index: None,
+            compressed_bitmaps: vec![],
         }
     }
 
@@ -168,20 +187,68 @@ impl Block {
         self.index.get(&key)
     }
 
+    // Returns the k/v pairs in the index by lexicographic order
+    fn get_sorted_index(&self) -> Vec<(&String, &Bitmap)> {
+        let mut sorted: Vec<_> = self.index.iter().collect();
+        sorted.sort_by_key(|x| x.0);
+        sorted
+    }
+
     // Convert a block to bytes.
     pub fn to_bytes(&mut self) -> Vec<u8> {
         // Freeze and cap the block.
         self.frozen = true;
-        
+
+        // Generate the fst
+        let mut fst_builder = MapBuilder::memory();
+        let mut bitmaps: Vec<Vec<u8>> = vec![];
+        let mut pos: u64 = 0;
+        for (key, bitmap) in self.get_sorted_index().iter() {
+            println!("{} {:?}", key, bitmap);
+            fst_builder.insert(key, pos).unwrap();
+            bitmaps.push(bitmap.serialize());
+            pos += 1;
+        }
+        let serialized_bitmaps = bincode::serialize::<Vec<Vec<u8>>>(&bitmaps).unwrap();
+        let serialized_fst = fst_builder.into_inner().unwrap();
         // Serializing the block's parts.
-        let serialized_start_timestamp = self.start_timestamp.unwrap().timestamp_millis().to_le_bytes().to_vec();
-        let serialized_end_timestamp = self.end_timestamp.unwrap().timestamp_millis().to_le_bytes().to_vec();
-        let serialized_index_keys = bincode::serialize::<Vec<String>>(&self.index.keys().map(|x| x.clone()).collect()).unwrap();
-        let serialized_index_values = bincode::serialize::<Vec<Vec<u8>>>(&self.index.values().map(|x| x.serialize()).collect()).unwrap();
+        let serialized_start_timestamp = self
+            .start_timestamp
+            .unwrap()
+            .timestamp_millis()
+            .to_le_bytes()
+            .to_vec();
+        let serialized_end_timestamp = self
+            .end_timestamp
+            .unwrap()
+            .timestamp_millis()
+            .to_le_bytes()
+            .to_vec();
+        /*
+        Original index compression for reference:
+         */
+        /*
+        let serialized_index_keys =
+            bincode::serialize::<Vec<String>>(&self.index.keys().map(|x| x.clone()).collect())
+                .unwrap();
+
+        let serialized_index_values = bincode::serialize::<Vec<Vec<u8>>>(
+            &self.index.values().map(|x| x.serialize()).collect(),
+        )
+        .unwrap();
+        */
         let serialized_id_map = bincode::serialize(&self.id_map).unwrap();
         let serialized_key_map = bincode::serialize(&self.key_map).unwrap();
         let serialized_storage = bincode::serialize(&self.storage).unwrap();
-        let parts = vec![serialized_start_timestamp, serialized_end_timestamp, serialized_index_keys, serialized_index_values, serialized_id_map, serialized_key_map, serialized_storage];
+        let parts = vec![
+            serialized_start_timestamp,
+            serialized_end_timestamp,
+            serialized_fst,
+            serialized_bitmaps,
+            serialized_id_map,
+            serialized_key_map,
+            serialized_storage,
+        ];
         assert!(parts.len() == HEADER_SIZE);
 
         // Create a header of pointers.
@@ -206,33 +273,64 @@ impl Block {
         // Read header (should be fixed size) and figure out array segments
         let header_size = HEADER_SIZE * size_of::<usize>();
         let bytes_iter: Vec<u8> = bytes.into_iter().cloned().collect();
-        let header: Vec<usize> = bytes_iter[0..header_size].to_vec().chunks(size_of::<usize>()).map(|x| usize::from_ne_bytes(x.try_into().unwrap())).collect();
+        let header: Vec<usize> = bytes_iter[0..header_size]
+            .to_vec()
+            .chunks(size_of::<usize>())
+            .map(|x| usize::from_ne_bytes(x.try_into().unwrap()))
+            .collect();
 
         // Deserialize each segment.
-        let bytes_start_timestamp: [u8; 8] = bytes_iter[header_size..header[0] as usize].try_into().unwrap();
+        let bytes_start_timestamp: [u8; 8] = bytes_iter[header_size..header[0] as usize]
+            .try_into()
+            .unwrap();
         let start_millis = i64::from_le_bytes(bytes_start_timestamp);
         let start_secs = (start_millis / 1000) as i64;
         let start_nanos = ((start_millis % 1000) * 1_000_000) as u32;
-        let deserialized_start_timestamp = DateTime::from_utc(NaiveDateTime::from_timestamp(start_secs, start_nanos), Utc);
-        
-        let bytes_end_timestamp: [u8; 8] = bytes_iter[header[0] as usize..header[1] as usize].try_into().unwrap();
+        let deserialized_start_timestamp =
+            DateTime::from_utc(NaiveDateTime::from_timestamp(start_secs, start_nanos), Utc);
+
+        let bytes_end_timestamp: [u8; 8] = bytes_iter[header[0] as usize..header[1] as usize]
+            .try_into()
+            .unwrap();
         let end_millis = i64::from_le_bytes(bytes_end_timestamp);
         let end_secs = (end_millis / 1000) as i64;
         let end_nanos = ((end_millis % 1000) * 1_000_000) as u32;
-        let deserialized_end_timestamp = DateTime::from_utc(NaiveDateTime::from_timestamp(end_secs, end_nanos), Utc);
+        let deserialized_end_timestamp =
+            DateTime::from_utc(NaiveDateTime::from_timestamp(end_secs, end_nanos), Utc);
 
-        let bytes_index_keys: Vec<u8> = bytes_iter[header[1] as usize..header[2] as usize].try_into().unwrap();
-        let deserialized_index_keys = bincode::deserialize::<Vec<String>>(&bytes_index_keys).unwrap();
+        /*
+        let bytes_index_keys: Vec<u8> = bytes_iter[header[1] as usize..header[2] as usize]
+            .try_into()
+            .unwrap();
+        let deserialized_index_keys =
+            bincode::deserialize::<Vec<String>>(&bytes_index_keys).unwrap();
 
-        let bytes_index_values: Vec<u8> = bytes_iter[header[2] as usize..header[3] as usize].to_vec();
-        let deserialized_index_values = bincode::deserialize::<Vec<Vec<u8>>>(&bytes_index_values).unwrap().iter().map(|x| Bitmap::deserialize(x)).collect::<Vec<Bitmap>>();
-        
+        let bytes_index_values: Vec<u8> =
+            bytes_iter[header[2] as usize..header[3] as usize].to_vec();
+        let deserialized_index_values = bincode::deserialize::<Vec<Vec<u8>>>(&bytes_index_values)
+            .unwrap()
+            .iter()
+            .map(|x| Bitmap::deserialize(x))
+            .collect::<Vec<Bitmap>>();
+         */
+        let bytes_fst: Vec<u8> = bytes_iter[header[1] as usize..header[2] as usize]
+            .try_into()
+            .unwrap();
+        let deserialized_fst = Map::new(bytes_fst).unwrap();
+        let bytes_bitmaps: Vec<u8> = bytes_iter[header[2] as usize..header[3] as usize].to_vec();
+        let deserialized_bitmaps = bincode::deserialize::<Vec<Vec<u8>>>(&bytes_bitmaps)
+            .unwrap()
+            .iter()
+            .map(|x| Bitmap::deserialize(x))
+            .collect::<Vec<Bitmap>>();
+
         let bytes_id_map: Vec<u8> = bytes_iter[header[3] as usize..header[4] as usize].to_vec();
         let deserialized_id_map = bincode::deserialize::<Vec<String>>(&bytes_id_map).unwrap();
-        
+
         let bytes_key_map: Vec<u8> = bytes_iter[header[4] as usize..header[5] as usize].to_vec();
-        let deserialized_key_map = bincode::deserialize::<HashMap<String, usize>>(&bytes_key_map).unwrap();
-        
+        let deserialized_key_map =
+            bincode::deserialize::<HashMap<String, usize>>(&bytes_key_map).unwrap();
+
         let bytes_storage: Vec<u8> = bytes_iter[header[5] as usize..header[6] as usize].to_vec();
         let deserialized_storage = bincode::deserialize::<Vec<Series>>(&bytes_storage).unwrap();
 
@@ -240,7 +338,14 @@ impl Block {
         assert!(bytes_iter.len() == header[6] as usize);
 
         // Create Hashmap
-        let deserialized_index: HashMap<String, Bitmap> = (deserialized_index_keys.iter().cloned().zip(deserialized_index_values)).collect();
+        let mut deserialized_index: HashMap<String, Bitmap> = HashMap::new();
+        let mut stream = deserialized_fst.into_stream();
+        while let Some((key, idx)) = stream.next() {
+            deserialized_index.insert(
+                String::from(str::from_utf8(key).unwrap()),
+                deserialized_bitmaps[idx as usize].clone(),
+            );
+        }
 
         // Initialize and return block.
         Block {
@@ -251,6 +356,8 @@ impl Block {
             start_timestamp: Some(deserialized_start_timestamp),
             end_timestamp: Some(deserialized_end_timestamp),
             frozen: false,
+            compressed_index: None,
+            compressed_bitmaps: vec![],
         }
     }
 
@@ -271,7 +378,7 @@ pub struct PackedBlock {
     start_timestamp: Option<DateTime<Utc>>,
     end_timestamp: Option<DateTime<Utc>>,
     index: HashMap<String, Bitmap>,
-    filepath: String
+    filepath: String,
 }
 impl PackedBlock {
     // Construct a PackedBlock from file.
@@ -279,41 +386,64 @@ impl PackedBlock {
         // Read file out to bytes.
         let mut file = File::open(&filepath).expect("ERROR: invalid filepath.");
         let mut bytes = vec![];
-        file.read_to_end(&mut bytes).expect("ERROR: issue reading block from disk.");
-        
+        file.read_to_end(&mut bytes)
+            .expect("ERROR: issue reading block from disk.");
+
         // Read header (should be fixed size) and figure out array segments
         let header_size = HEADER_SIZE * size_of::<usize>();
         let bytes_iter: Vec<u8> = bytes.into_iter().collect();
-        let header: Vec<usize> = bytes_iter[0..header_size].to_vec().chunks(size_of::<usize>()).map(|x| usize::from_ne_bytes(x.try_into().unwrap())).collect();
+        let header: Vec<usize> = bytes_iter[0..header_size]
+            .to_vec()
+            .chunks(size_of::<usize>())
+            .map(|x| usize::from_ne_bytes(x.try_into().unwrap()))
+            .collect();
 
         // Deserialize each segment.
-        let bytes_start_timestamp: [u8; 8] = bytes_iter[header_size..header[0] as usize].try_into().unwrap();
+        let bytes_start_timestamp: [u8; 8] = bytes_iter[header_size..header[0] as usize]
+            .try_into()
+            .unwrap();
         let start_millis = i64::from_le_bytes(bytes_start_timestamp);
         let start_secs = (start_millis / 1000) as i64;
         let start_nanos = ((start_millis % 1000) * 1_000_000) as u32;
-        let deserialized_start_timestamp = DateTime::from_utc(NaiveDateTime::from_timestamp(start_secs, start_nanos), Utc);
-        
-        let bytes_end_timestamp: [u8; 8] = bytes_iter[header[0] as usize..header[1] as usize].try_into().unwrap();
+        let deserialized_start_timestamp =
+            DateTime::from_utc(NaiveDateTime::from_timestamp(start_secs, start_nanos), Utc);
+
+        let bytes_end_timestamp: [u8; 8] = bytes_iter[header[0] as usize..header[1] as usize]
+            .try_into()
+            .unwrap();
         let end_millis = i64::from_le_bytes(bytes_end_timestamp);
         let end_secs = (end_millis / 1000) as i64;
         let end_nanos = ((end_millis % 1000) * 1_000_000) as u32;
-        let deserialized_end_timestamp = DateTime::from_utc(NaiveDateTime::from_timestamp(end_secs, end_nanos), Utc);
+        let deserialized_end_timestamp =
+            DateTime::from_utc(NaiveDateTime::from_timestamp(end_secs, end_nanos), Utc);
 
-        let bytes_index_keys: Vec<u8> = bytes_iter[header[1] as usize..header[2] as usize].try_into().unwrap();
-        let deserialized_index_keys = bincode::deserialize::<Vec<String>>(&bytes_index_keys).unwrap();
+        let bytes_index_keys: Vec<u8> = bytes_iter[header[1] as usize..header[2] as usize]
+            .try_into()
+            .unwrap();
+        let deserialized_index_keys =
+            bincode::deserialize::<Vec<String>>(&bytes_index_keys).unwrap();
 
-        let bytes_index_values: Vec<u8> = bytes_iter[header[2] as usize..header[3] as usize].to_vec();
-        let deserialized_index_values = bincode::deserialize::<Vec<Vec<u8>>>(&bytes_index_values).unwrap().iter().map(|x| Bitmap::deserialize(x)).collect::<Vec<Bitmap>>();
+        let bytes_index_values: Vec<u8> =
+            bytes_iter[header[2] as usize..header[3] as usize].to_vec();
+        let deserialized_index_values = bincode::deserialize::<Vec<Vec<u8>>>(&bytes_index_values)
+            .unwrap()
+            .iter()
+            .map(|x| Bitmap::deserialize(x))
+            .collect::<Vec<Bitmap>>();
 
         // Create Hashmap
-        let deserialized_index: HashMap<String, Bitmap> = (deserialized_index_keys.iter().cloned().zip(deserialized_index_values)).collect();
+        let deserialized_index: HashMap<String, Bitmap> = (deserialized_index_keys
+            .iter()
+            .cloned()
+            .zip(deserialized_index_values))
+        .collect();
 
         // Initialize and return block.
         PackedBlock {
             index: deserialized_index,
             start_timestamp: Some(deserialized_start_timestamp),
             end_timestamp: Some(deserialized_end_timestamp),
-            filepath: filepath
+            filepath: filepath,
         }
     }
 
@@ -322,7 +452,8 @@ impl PackedBlock {
         // Read file out to bytes.
         let mut file = File::open(&self.filepath).expect("ERROR: invalid filepath.");
         let mut bytes = vec![];
-        file.read_to_end(&mut bytes).expect("ERROR: issue reading block from disk.");
+        file.read_to_end(&mut bytes)
+            .expect("ERROR: issue reading block from disk.");
         Block::from_bytes(&bytes)
     }
 }
@@ -389,7 +520,12 @@ impl Series {
 
     // Export records (SeriesRecord) to a Vec<Records>.
     pub fn get_records(&self) -> Vec<Record> {
-        self.records.read().expect("RwLock poisoned").iter().map(|x| x.to_record(self)).collect()
+        self.records
+            .read()
+            .expect("RwLock poisoned")
+            .iter()
+            .map(|x| x.to_record(self))
+            .collect()
     }
 
     // Insert a record into this series.
@@ -413,13 +549,13 @@ impl Series {
 #[derive(Serialize, Deserialize)]
 pub struct SeriesRecord {
     metrics: Vec<f64>,
-    timestamp: i64
+    timestamp: i64,
 }
 impl SeriesRecord {
     pub fn from_record(record: Record) -> Self {
         SeriesRecord {
             metrics: record.get_populated_variables().values().cloned().collect(),
-            timestamp: record.get_timestamp().timestamp_millis()
+            timestamp: record.get_timestamp().timestamp_millis(),
         }
     }
 
@@ -429,24 +565,39 @@ impl SeriesRecord {
         Record::new(
             series.get_name(),
             series.get_labels(),
-            series.get_variables().into_iter().zip(self.metrics.clone()).collect(),
-            DateTime::from_utc(NaiveDateTime::from_timestamp(ts_secs, ts_nanos), Utc)
+            series
+                .get_variables()
+                .into_iter()
+                .zip(self.metrics.clone())
+                .collect(),
+            DateTime::from_utc(NaiveDateTime::from_timestamp(ts_secs, ts_nanos), Utc),
         )
     }
 }
 
 // Ingests a read operation.
-fn db_read(read_rx: Receiver<SelectRequest>, shared_block: Arc<RwLock<Block>>, shared_index: Arc<RwLock<BlockIndex>>) {// Receive read operations from the server
+fn db_read(
+    read_rx: Receiver<SelectRequest>,
+    shared_block: Arc<RwLock<Block>>,
+    shared_index: Arc<RwLock<BlockIndex>>,
+) {
+    // Receive read operations from the server
     for request in read_rx {
         // Eval statement and reply.
         let statement = request.statement.clone();
         println!("===================================");
-        println!("Received statement: {}", Value::to_string(&json!(statement)));
+        println!(
+            "Received statement: {}",
+            Value::to_string(&json!(statement))
+        );
 
         // Convert to DNF.
         let dnf_statement = dnf(statement);
         println!("===================================");
-        println!("Converted statement: {}", Value::to_string(&json!(dnf_statement)));
+        println!(
+            "Converted statement: {}",
+            Value::to_string(&json!(dnf_statement))
+        );
 
         let result = dnf_statement.eval(&shared_block);
         request.reply(result.into_vec());
@@ -454,7 +605,11 @@ fn db_read(read_rx: Receiver<SelectRequest>, shared_block: Arc<RwLock<Block>>, s
 }
 
 // Ingests a write operation.
-fn db_write(write_rx: Receiver<Record>, shared_block: Arc<RwLock<Block>>, shared_index: Arc<RwLock<BlockIndex>>) {
+fn db_write(
+    write_rx: Receiver<Record>,
+    shared_block: Arc<RwLock<Block>>,
+    shared_index: Arc<RwLock<BlockIndex>>,
+) {
     // Counter for number of writes. NOTE: Temporary.
     let mut counter = 0;
 
@@ -463,13 +618,12 @@ fn db_write(write_rx: Receiver<Record>, shared_block: Arc<RwLock<Block>>, shared
         // Get key and block.
         let key: String = received.get_key();
         let mut block = shared_block.write().expect("RwLock poisoned");
-        
+
         // TODO: Shouldn't this be in the Block impl?
         // Check if this series exists in the block
         if let Some(id) = block.key_map.get(&key) {
             block.storage[*id].insert(received.clone());
         }
-
         // Key does not exist in the block
         else {
             let id = block.storage.len();
@@ -497,17 +651,24 @@ fn db_write(write_rx: Receiver<Record>, shared_block: Arc<RwLock<Block>>, shared
         }
 
         // Update block timeranges.
-        if block.start_timestamp.is_none() || block.start_timestamp.unwrap() > received.clone().get_timestamp() {
+        if block.start_timestamp.is_none()
+            || block.start_timestamp.unwrap() > received.clone().get_timestamp()
+        {
             block.start_timestamp = Some(received.clone().get_timestamp().clone());
         }
-        if block.end_timestamp.is_none() || block.end_timestamp.unwrap() < received.clone().get_timestamp() {
+        if block.end_timestamp.is_none()
+            || block.end_timestamp.unwrap() < received.clone().get_timestamp()
+        {
             block.end_timestamp = Some(received.clone().get_timestamp().clone());
         }
 
         // After write, consider flushing.
         counter = counter + 1;
         if counter % FLUSH_FREQUENCY == 0 {
-            shared_index.write().expect("RwLock poisoined").update(&mut block);
+            shared_index
+                .write()
+                .expect("RwLock poisoined")
+                .update(&mut block);
         }
     }
 }
@@ -515,7 +676,8 @@ fn db_write(write_rx: Receiver<Record>, shared_block: Arc<RwLock<Block>>, shared
 // Create block and open database.
 pub fn db_open(read_rx: Receiver<SelectRequest>, write_rx: Receiver<Record>) {
     // Create an in-memory index, populated from disk.
-    fs::create_dir_all(format!("{}", dotenv::var("DATAROOT").unwrap())).expect("ERROR: issue creating data dir.");
+    fs::create_dir_all(format!("{}", dotenv::var("DATAROOT").unwrap()))
+        .expect("ERROR: issue creating data dir.");
     let index = BlockIndex::from_disk(format!("{}/index.rdb", dotenv::var("DATAROOT").unwrap()));
 
     // Alternatively, populate it manually from the blocks in the dir.
