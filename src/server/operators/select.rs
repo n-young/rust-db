@@ -119,8 +119,7 @@ impl Conditions {
         match self {
             // If a Leaf, return results.
             Conditions::Leaf(cond) => {
-                let mut r = cond.eval(shared_block);
-                r.unpack(shared_block);
+                let r = cond.eval(shared_block);
                 r
             }
             // If an And, intersect the results.
@@ -128,7 +127,6 @@ impl Conditions {
                 let mut r1 = (*b1).eval(shared_block);
                 let r2 = (*b2).eval(shared_block);
                 r1.intersection(r2, shared_block);
-                r1.unpack(shared_block);
                 r1
             }
             // If an or, union the results.
@@ -136,7 +134,6 @@ impl Conditions {
                 let mut r1 = (*b1).eval(shared_block);
                 let r2 = (*b2).eval(shared_block);
                 r1.union(r2, shared_block);
-                r1.unpack(shared_block);
                 r1
             }
         }

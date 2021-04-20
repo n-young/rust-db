@@ -86,6 +86,14 @@ impl Record {
             .collect()
     }
 
+    // Get variables.
+    pub fn get_variable_keys(&self) -> Vec<String> {
+        self.variables
+            .iter()
+            .map(|(x, _)| String::from(x))
+            .collect()
+    }
+
     // Get a particular metric.
     pub fn get_metric(&self, key: String) -> Option<&f64> {
         self.variables.get(&key)

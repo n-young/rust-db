@@ -22,7 +22,7 @@ use uuid::Uuid;
 // CONSTANTS
 // TODO: Put these in their own file
 const HEADER_SIZE: usize = 7;
-const FLUSH_FREQUENCY: u32 = 10;
+const FLUSH_FREQUENCY: u32 = 50000;
 
 // TODO: Break this file up.
 
@@ -474,7 +474,7 @@ impl Series {
             id: id,
             name: record.get_name(),
             labels: record.get_populated_labels(),
-            variables: record.get_variables(),
+            variables: record.get_variable_keys(),
             records: RwLock::new(vec![SeriesRecord::from_record(record)]),
         }
     }
@@ -591,7 +591,8 @@ fn db_read(
             Value::to_string(&json!(statement))
         );
 
-        // Convert to DNF.
+        // Convert to DNF. NOTE: Changing this param
+        // let dnf_statement = statement;
         let dnf_statement = dnf(statement);
         println!("===================================");
         println!(
@@ -599,7 +600,8 @@ fn db_read(
             Value::to_string(&json!(dnf_statement))
         );
 
-        let result = dnf_statement.eval(&shared_block);
+        let mut result = dnf_statement.eval(&shared_block);
+        result.unpack(&shared_block);
         request.reply(result.into_vec());
     }
 }
