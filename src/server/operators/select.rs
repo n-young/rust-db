@@ -317,6 +317,11 @@ impl ResultSet {
                 res.push(self.data[i].clone());
                 i += 1;
                 j += 1;
+            } else {
+                res.push(self.data[i].clone());
+                res.push(other.data[j].clone());
+                i += 1;
+                j += 1;
             }
         }
 
@@ -351,6 +356,15 @@ impl ResultSet {
                 res.push(self.data[i].clone());
                 i += 1;
                 j += 1;
+            } else {
+                if other.data.contains(&self.data[i]) {
+                    res.push(self.data[i].clone());
+                    i += 1;
+                }
+                if self.data.contains(&other.data[j]) {
+                    res.push(other.data[j].clone());
+                    j += 1;
+                }
             }
         }
         self.data = res;
