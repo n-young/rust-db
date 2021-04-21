@@ -592,8 +592,8 @@ fn db_read(
         );
 
         // Convert to DNF. NOTE: Changing this param
-        // let dnf_statement = statement;
-        let dnf_statement = dnf(statement);
+        let dnf_statement = statement;
+        // let dnf_statement = dnf(statement);
         println!("===================================");
         println!(
             "Converted statement: {}",

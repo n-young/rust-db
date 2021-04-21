@@ -119,7 +119,8 @@ impl Conditions {
         match self {
             // If a Leaf, return results.
             Conditions::Leaf(cond) => {
-                let r = cond.eval(shared_block);
+                let mut r = cond.eval(shared_block);
+                // r.unpack(shared_block); // NOTE: Remove this.
                 r
             }
             // If an And, intersect the results.
@@ -127,6 +128,7 @@ impl Conditions {
                 let mut r1 = (*b1).eval(shared_block);
                 let r2 = (*b2).eval(shared_block);
                 r1.intersection(r2, shared_block);
+                // r1.unpack(shared_block); // NOTE: Remove this.
                 r1
             }
             // If an or, union the results.
@@ -134,6 +136,7 @@ impl Conditions {
                 let mut r1 = (*b1).eval(shared_block);
                 let r2 = (*b2).eval(shared_block);
                 r1.union(r2, shared_block);
+                // r1.unpack(shared_block); // NOTE: Remove this.
                 r1
             }
         }
@@ -260,7 +263,7 @@ impl ResultSet {
             let series = block.get_storage()[id as usize].get_records();
             all_series.push(series.clone());
             positions.push(0);
-            pq.push(counter, series[0].get_timestamp());
+            pq.push(counter, series[0].clone());
             counter += 1;
         }
         // Perform a timestamp-sorted multi-merge of all series
@@ -281,12 +284,13 @@ impl ResultSet {
                     if pos + 1 >= all_series[i].len() {
                         continue;
                     }
-                    pq.push(i, all_series[i][pos + 1].get_timestamp());
+                    pq.push(i, all_series[i][pos + 1].clone());
                 }
                 None => continue,
             }
         }
         self.data = data;
+        self.data.reverse(); // TODO: Do this properly!
         self.unpacked = true;
     }
 
@@ -306,6 +310,7 @@ impl ResultSet {
         let mut j = 0;
 
         // Until one of our iterators reaches the end.
+        // TODO: This leads to duplication
         while i < self.data.len() && j < other.data.len() {
             if self.data[i].get_timestamp() < other.data[j].get_timestamp() {
                 res.push(self.data[i].clone());
@@ -348,21 +353,29 @@ impl ResultSet {
 
         // Until one of our iterators reaches the end.
         while i < self.data.len() && j < other.data.len() {
-            if self.data[i].get_timestamp() < other.data[j].get_timestamp() {
+            if self.data[i] < other.data[j] {
                 i += 1;
-            } else if self.data[i].get_timestamp() > other.data[j].get_timestamp() {
+            } else if self.data[i] > other.data[j] {
                 j += 1;
             } else if self.data[i] == other.data[j] {
                 res.push(self.data[i].clone());
                 i += 1;
                 j += 1;
             } else {
+                // TODO: This leads to duplication
+                let mut check = true;
                 if other.data.contains(&self.data[i]) {
                     res.push(self.data[i].clone());
                     i += 1;
+                    check = false;
                 }
                 if self.data.contains(&other.data[j]) {
                     res.push(other.data[j].clone());
+                    j += 1;
+                    check = false;
+                }
+                if check {
+                    i += 1;
                     j += 1;
                 }
             }

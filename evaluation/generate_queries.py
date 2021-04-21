@@ -7,108 +7,95 @@ import random
 random.seed(1)
 import sys
 
-# ==================================
-# Generates queries for a given
-# workload given its workload.
-# ==================================
-
-# Define hyperparameters
-NUM_QUERIES = 100 # Number of queries to generate
-MAX_HEIGHT = 3 # Maximum height of the query tree.
-FRAC_LABELS = 0.5 # Proportion of Leafs that are labels.
-FRAC_AND = 0.5 # Proportion of branches that are Ands.
 FRAC_VARIANCE = 0.5 # Proportion of each metric mean that we should be allowed to deviate from.
 ops = ["Gt", "Lt", "GtEq", "LtEq"]
 
-# Function to get label and metric metadata given a filename.
-def get_metadata(filename):
-    # Metadata ingest vars.
-    label_sets = {}
-    variables = {}
+def get_key(labels, metrics):
+    key = ""
+    label_tuples = [(x, labels[x]) for x in labels]
+    label_tuples.sort(key=lambda x: x[0])
+    metric_tuples = [(x, metrics[x]) for x in metrics]
+    metric_tuples.sort(key=lambda x: x[0])
+    for x in label_tuples:
+        key += x[0] + x[1]
+    for x in metric_tuples:
+        key += x[0]
+    return key
+    
 
-    # For each line in the workload...
+def get_series(filename):
+    # Metadata ingest vars.
+    series = {}
+    
+     # For each line in the workload...
     with open(filename, 'r') as file:
         for line in file:
-
             # Convert the line from JSON, get the labels and variables.
             obj = json.loads(line)
             obj_labels = obj['Write']['labels']
-            obj_variables = obj['Write']['variables']
+            obj_metrics = obj['Write']['variables']
+            obj_key = get_key(obj_labels, obj_metrics)
+            if obj_key in series:
+                series[obj_key].append((obj_labels, obj_metrics))
+            else:
+                series[obj_key] = [(obj_labels, obj_metrics)]
 
-            # Extract labels as sets.
-            for k in obj_labels:
-                if k in label_sets:
-                    label_sets[k].add(obj_labels[k])
-                else:
-                    label_sets[k] = {obj_labels[k]}
+    return series
 
-            # Extract variables as lists.
-            for k in obj_variables:
-                if k in variables:
-                    variables[k].append(obj_variables[k])
-                else:
-                    variables[k] = [obj_variables[k]]
-
-    # Processed metadata vars.
-    labels = {}
-    metrics = {}
-
-    # Convert labels to lists.
-    for k in label_sets:
-        labels[k] = [x for x in label_sets[k]]
-
-    # Normalize variables.
-    for k in variables:
-        metrics[k] = sum(variables[k]) / len(variables[k])
-
-    # Return.
-    return labels, metrics
-
-# Function to generate a label pair.
 def generate_label_pair(labels):
     labelkey = random.choice(list(labels.keys()))
-    labelvalue = random.choice(labels[labelkey])
+    labelvalue = labels[labelkey]
     return labelkey, labelvalue
 
 # Function to generate a metric pair.
 def generate_metric_pair(metrics):
     metricvariable = random.choice(list(metrics.keys()))
-    metricmean = metrics[metricvariable]
-    metricvariance = metricmean * FRAC_VARIANCE
-    metricvalue = math.trunc(np.random.normal(loc=metricmean, scale=metricvariance) * 1000) / 1000
+    metricvalue = metrics[metricvariable]
     return metricvariable, metricvalue
 
-# Function to generate a condition recursively.
-def generate_condition(height, labels, metrics):
-    if height == 0: # Generate a Leaf
-        if random.random() > FRAC_LABELS:
-            labelkey, labelvalue = generate_label_pair(labels)
-            ret = {
-                "Leaf": {
-                    "lhs": { "LabelKey": labelkey },
-                    "rhs": { "LabelValue": labelvalue },
-                    "op": "Eq"
-                }
-            }
-        else:
-            metricvariable, metricvalue = generate_metric_pair(metrics)
-            ret = {
-                "Leaf": {
-                    "lhs": { "Variable": metricvariable },
-                    "rhs": { "Metric": metricvalue },
-                    "op": random.choice(ops)
-                }
-            }
-        return ret
-
-    else: # Generate an And or an Or, and recurse
-        op = "And" if random.random() > FRAC_AND else "Or"
-        ret = {
-            op: [ generate_condition(height-1, labels, metrics), generate_condition(height-1, labels, metrics)]
+def generate_label_leaf(labels):
+    labelkey, labelvalue = generate_label_pair(labels)
+    ret = {
+        "Leaf": {
+            "lhs": { "LabelKey": labelkey },
+            "rhs": { "LabelValue": labelvalue },
+            "op": "Eq"
         }
-        return ret
-        
-        
+    }
+    return ret
+
+def generate_metric_leaf(metrics):
+    metricvariable, metricvalue = generate_metric_pair(metrics)
+    ret = {
+        "Leaf": {
+            "lhs": { "Variable": metricvariable },
+            "rhs": { "Metric": metricvalue },
+            "op": random.choice(ops)
+        }
+    }
+    return ret
+
+def generate_min_condition(series):
+    _, series_choices = random.choice(list(series.items()))
+    labels, metrics = series_choices[0]
+    ret = {
+        "And": [
+            {
+                "Or": [
+                    {
+                        "And": [
+                            generate_label_leaf(labels),
+                            generate_metric_leaf(metrics)
+                        ]
+                    },
+                    generate_metric_leaf(metrics)
+                ]
+            },
+            generate_label_leaf(labels)
+        ]
+    }
+    return ret
+
 # Generate NUM_QUERIES queries.
 if __name__ == "__main__":
     if len(sys.argv) != 2:
@@ -116,17 +103,17 @@ if __name__ == "__main__":
         exit(0)
     
     filename = sys.argv[1]
-    labels, metrics = get_metadata(filename)
-    for _ in range(NUM_QUERIES):
+    series = get_series(filename)
+
+    for _ in range(100):
         query = {
             "Select": {
                 "name": "generated_select",
                 "predicate": {
                     "name": "generated_predicate",
-                    "condition": generate_condition(MAX_HEIGHT, labels, metrics)
+                    "condition": generate_min_condition(series)
                 }
             }
         }
         print(json.dumps(query))
-
 

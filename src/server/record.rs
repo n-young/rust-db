@@ -1,7 +1,8 @@
 extern crate bincode;
+use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::fmt;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -122,6 +123,29 @@ impl Record {
         bincode::deserialize(data).unwrap()
     }
 }
+impl PartialOrd for Record {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Record {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self.timestamp < other.timestamp {
+            return Ordering::Less;
+        } else if self.timestamp > other.timestamp {
+            return Ordering::Greater;
+        } else {
+            if self.get_key() < other.get_key() {
+                return Ordering::Less;
+            } else if self.get_key() > other.get_key() {
+                return Ordering::Greater;
+            } else {
+                return Ordering::Equal
+            }
+        }
+    }
+}
+impl Eq for Record {}
 impl fmt::Display for Record {
     // Formatter.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

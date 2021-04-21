@@ -1,22 +1,48 @@
 {
     "Select": {
-        "name": "redis",
+        "name": "generated_select",
         "predicate": {
-            "name": "pred",
+            "name": "generated_predicate",
             "condition": {
                 "And": [
                     {
-                        "Leaf": {
-                            "lhs": { "LabelKey": "Key" },
-                            "rhs": { "LabelValue": "Value" },
-                            "op": "Eq"
-                        }
+                        "Or": [
+                            {
+                                "And": [
+                                    {
+                                        "Leaf": {
+                                            "lhs": {
+                                                "LabelKey": "service_environment"
+                                            },
+                                            "rhs": { "LabelValue": "test" },
+                                            "op": "Eq"
+                                        }
+                                    },
+                                    {
+                                        "Leaf": {
+                                            "lhs": {
+                                                "Variable": "processes_forked"
+                                            },
+                                            "rhs": { "Metric": 0.0 },
+                                            "op": "Gt"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "Leaf": {
+                                    "lhs": { "Variable": "context_switches" },
+                                    "rhs": { "Metric": 0.0 },
+                                    "op": "GtEq"
+                                }
+                            }
+                        ]
                     },
                     {
                         "Leaf": {
-                            "lhs": { "Variable": "Var" },
-                            "rhs": { "Metric": 6.0 },
-                            "op": "Gt"
+                            "lhs": { "LabelKey": "team" },
+                            "rhs": { "LabelValue": "CHI" },
+                            "op": "Eq"
                         }
                     }
                 ]
