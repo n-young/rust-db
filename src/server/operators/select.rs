@@ -227,7 +227,7 @@ impl Condition {
 // ResultSet Struct.
 pub struct ResultSet {
     unpacked: bool,
-    data: Vec<Record>, // Assumed sorted.
+    pub data: Vec<Record>, // Assumed sorted.
     series: Bitmap,
     filters: Vec<(String, Box<dyn Fn(f64) -> bool>)>,
 }
@@ -271,12 +271,11 @@ impl ResultSet {
             match pq.pop() {
                 Some((i, _)) => {
                     let pos = positions[i];
-                    let entry = &all_series[i][pos];
+                    let entry = all_series[i][pos].clone();
                     // Apply filters as we go
                     if pass_filters(&entry, &self.filters) {
-                        // Check that we haven't seen this data point before
-                        if data.len() == 0 || *entry != data[data.len() - 1] {
-                            data.push(entry.clone());
+                        if data.len() == 0 || entry != data[data.len() - 1] {
+                            data.push(entry);
                         }
                     }
                     // Advance the pointer for this series
@@ -290,7 +289,6 @@ impl ResultSet {
             }
         }
         self.data = data;
-        self.data.reverse(); // TODO: Do this properly!
         self.unpacked = true;
     }
 
@@ -309,22 +307,17 @@ impl ResultSet {
         let mut i = 0;
         let mut j = 0;
 
+        // TODO: Once record ordering is fixed, fix the ordering here too
         // Until one of our iterators reaches the end.
-        // TODO: This leads to duplication
         while i < self.data.len() && j < other.data.len() {
-            if self.data[i].get_timestamp() < other.data[j].get_timestamp() {
+            if self.data[i] > other.data[j] {
                 res.push(self.data[i].clone());
                 i += 1;
-            } else if self.data[i].get_timestamp() > other.data[j].get_timestamp() {
+            } else if self.data[i] < other.data[j] {
                 res.push(other.data[j].clone());
-                j += 1;
-            } else if self.data[i] == other.data[j] {
-                res.push(self.data[i].clone());
-                i += 1;
                 j += 1;
             } else {
                 res.push(self.data[i].clone());
-                res.push(other.data[j].clone());
                 i += 1;
                 j += 1;
             }
@@ -351,33 +344,17 @@ impl ResultSet {
         let mut i = 0;
         let mut j = 0;
 
+        // TODO: Once record ordering is fixed, fix the ordering here too
         // Until one of our iterators reaches the end.
         while i < self.data.len() && j < other.data.len() {
-            if self.data[i] < other.data[j] {
+            if self.data[i] > other.data[j] {
                 i += 1;
-            } else if self.data[i] > other.data[j] {
+            } else if self.data[i] < other.data[j] {
                 j += 1;
-            } else if self.data[i] == other.data[j] {
+            } else {
                 res.push(self.data[i].clone());
                 i += 1;
                 j += 1;
-            } else {
-                // TODO: This leads to duplication
-                let mut check = true;
-                if other.data.contains(&self.data[i]) {
-                    res.push(self.data[i].clone());
-                    i += 1;
-                    check = false;
-                }
-                if self.data.contains(&other.data[j]) {
-                    res.push(other.data[j].clone());
-                    j += 1;
-                    check = false;
-                }
-                if check {
-                    i += 1;
-                    j += 1;
-                }
             }
         }
         self.data = res;

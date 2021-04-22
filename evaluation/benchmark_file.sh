@@ -1,3 +1,3 @@
 #! /usr/bin/env sh
 
-time cat $1 | cargo run client
+time cat $1 | cargo run client > /dev/null
