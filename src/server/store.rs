@@ -592,17 +592,32 @@ fn db_read(
         );
 
         // Convert to DNF. NOTE: Changing this param
-        let dnf_statement = statement;
-        // let dnf_statement = dnf(statement);
+        let normal_statement = statement.clone();
+        let dnf_statement = dnf(statement);
         println!("===================================");
         println!(
             "Converted statement: {}",
             Value::to_string(&json!(dnf_statement))
         );
 
-        let mut result = dnf_statement.eval(&shared_block);
-        result.unpack(&shared_block);
-        request.reply(result.into_vec());
+        let mut normal_result = normal_statement.eval(&shared_block);
+        let mut dnf_result = dnf_statement.eval(&shared_block);
+        normal_result.unpack(&shared_block);
+        dnf_result.unpack(&shared_block);
+        let mut i = 0;
+        let mut j = 0;
+        while i < normal_result.data.len() && j < dnf_result.data.len() {
+            if normal_result.data[i] != dnf_result.data[j] {
+                println!("Ah fuck");
+                break;
+            }
+            i += 1;
+            j += 1;
+        }
+        println!("Done");
+        println!("Normal Result: {:?}", normal_result.into_vec().len());
+        println!("Dnf Result: {:?}", dnf_result.into_vec().len());
+        request.reply(vec![]);
     }
 }
 

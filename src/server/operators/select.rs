@@ -227,7 +227,7 @@ impl Condition {
 // ResultSet Struct.
 pub struct ResultSet {
     unpacked: bool,
-    data: Vec<Record>, // Assumed sorted.
+    pub data: Vec<Record>, // Assumed sorted.
     series: Bitmap,
     filters: Vec<(String, Box<dyn Fn(f64) -> bool>)>,
 }
@@ -263,7 +263,7 @@ impl ResultSet {
             let series = block.get_storage()[id as usize].get_records();
             all_series.push(series.clone());
             positions.push(0);
-            pq.push(counter, series[0].clone());
+            pq.push(counter, all_series[counter][0].clone());
             counter += 1;
         }
         // Perform a timestamp-sorted multi-merge of all series
@@ -271,12 +271,11 @@ impl ResultSet {
             match pq.pop() {
                 Some((i, _)) => {
                     let pos = positions[i];
-                    let entry = &all_series[i][pos];
+                    let entry = all_series[i][pos].clone();
                     // Apply filters as we go
                     if pass_filters(&entry, &self.filters) {
-                        // Check that we haven't seen this data point before
-                        if data.len() == 0 || *entry != data[data.len() - 1] {
-                            data.push(entry.clone());
+                        if data.len() == 0 || entry != data[data.len() - 1] {
+                            data.push(entry);
                         }
                     }
                     // Advance the pointer for this series
@@ -290,7 +289,16 @@ impl ResultSet {
             }
         }
         self.data = data;
-        self.data.reverse(); // TODO: Do this properly!
+        let mut i = 0;
+        let mut sorted = true;
+        while i < self.data.len() - 1 {
+            let str1: String = String::from(self.data[i].get_key());
+            let str2: String = String::from(self.data[i + i].get_key());
+            println!("cur: {:?}, next: {:?}, {:?}", str1, str2, str1.cmp(&str2));
+            i += 1;
+        }
+        println!("Unpacking sorted? {}", sorted);
+        //self.data.reverse(); // TODO: Do this properly!
         self.unpacked = true;
     }
 
@@ -312,19 +320,14 @@ impl ResultSet {
         // Until one of our iterators reaches the end.
         // TODO: This leads to duplication
         while i < self.data.len() && j < other.data.len() {
-            if self.data[i].get_timestamp() < other.data[j].get_timestamp() {
+            if self.data[i] < other.data[j] {
                 res.push(self.data[i].clone());
                 i += 1;
-            } else if self.data[i].get_timestamp() > other.data[j].get_timestamp() {
+            } else if self.data[i] > other.data[j] {
                 res.push(other.data[j].clone());
-                j += 1;
-            } else if self.data[i] == other.data[j] {
-                res.push(self.data[i].clone());
-                i += 1;
                 j += 1;
             } else {
                 res.push(self.data[i].clone());
-                res.push(other.data[j].clone());
                 i += 1;
                 j += 1;
             }
@@ -333,7 +336,13 @@ impl ResultSet {
         // Handle residual, return.
         res.append(&mut Vec::from(self.data.get(i..).unwrap()));
         res.append(&mut Vec::from(other.data.get(j..).unwrap()));
+        println!(
+            "Unioning two sets of size {} and {}",
+            self.data.len(),
+            other.data.len()
+        );
         self.data = res;
+        println!("Result has size {}", self.data.len());
     }
 
     // Intersect two RSs. Assumes both are sorted by timestamp.
@@ -357,30 +366,19 @@ impl ResultSet {
                 i += 1;
             } else if self.data[i] > other.data[j] {
                 j += 1;
-            } else if self.data[i] == other.data[j] {
+            } else {
                 res.push(self.data[i].clone());
                 i += 1;
                 j += 1;
-            } else {
-                // TODO: This leads to duplication
-                let mut check = true;
-                if other.data.contains(&self.data[i]) {
-                    res.push(self.data[i].clone());
-                    i += 1;
-                    check = false;
-                }
-                if self.data.contains(&other.data[j]) {
-                    res.push(other.data[j].clone());
-                    j += 1;
-                    check = false;
-                }
-                if check {
-                    i += 1;
-                    j += 1;
-                }
             }
         }
+        println!(
+            "Intersecting two sets of size {} and {}",
+            self.data.len(),
+            other.data.len()
+        );
         self.data = res;
+        println!("Result has size {}", self.data.len());
     }
 
     // Converts a ResultSet into a Vector.
