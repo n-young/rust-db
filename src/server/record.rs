@@ -1,14 +1,14 @@
 extern crate bincode;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 // Record struct.
-#[derive(Debug, PartialEq, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Record {
     name: String,
     labels: HashMap<String, String>,
@@ -129,23 +129,34 @@ impl PartialOrd for Record {
     }
 }
 impl Ord for Record {
+    // TODO: figure out a way to manage priority without this flipped ordering
     fn cmp(&self, other: &Self) -> Ordering {
-        if self.timestamp < other.timestamp {
+        // Give lower timestamps greater priority
+        if self.timestamp > other.timestamp {
             return Ordering::Less;
-        } else if self.timestamp > other.timestamp {
+        } else if self.timestamp < other.timestamp {
             return Ordering::Greater;
         } else {
-            if self.get_key() < other.get_key() {
+            // Again, sorting by reverse priority
+            if self.get_key() > other.get_key() {
                 return Ordering::Less;
-            } else if self.get_key() > other.get_key() {
+            } else if self.get_key() < other.get_key() {
                 return Ordering::Greater;
             } else {
-                return Ordering::Equal
+                return Ordering::Equal;
             }
         }
     }
 }
+
+impl PartialEq for Record {
+    fn eq(&self, other: &Self) -> bool {
+        self.timestamp == other.timestamp && self.get_key() == other.get_key()
+    }
+}
+
 impl Eq for Record {}
+
 impl fmt::Display for Record {
     // Formatter.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -164,7 +175,6 @@ impl Hash for Record {
         self.timestamp.hash(state);
     }
 }
-
 
 #[cfg(test)]
 mod test {
