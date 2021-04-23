@@ -75,7 +75,7 @@ def generate_metric_leaf(metrics):
     }
     return ret
 
-def generate_min_condition(series):
+def generate_prime_condition(series):
     _, series_choices = random.choice(list(series.items()))
     labels, metrics = series_choices[0]
     ret = {
@@ -96,6 +96,72 @@ def generate_min_condition(series):
     }
     return ret
 
+def generate_min_condition(series):
+    _, series_choices = random.choice(list(series.items()))
+    labels, metrics = series_choices[0]
+    ret = {
+        "And": [
+            {
+                "Or": [
+                    generate_label_leaf(labels),
+                    generate_metric_leaf(metrics)
+                ]
+            },
+            generate_label_leaf(labels)
+        ]
+    }
+    return ret
+
+def generate_cnf_condition(series):
+    _, series_choices1 = random.choice(list(series.items()))
+    labels1, metrics1 = series_choices1[0]
+    
+    _, series_choices2 = random.choice(list(series.items()))
+    labels2, metrics2 = series_choices2[0]
+
+    _, series_choices3 = random.choice(list(series.items()))
+    labels3, metrics3 = series_choices3[0]
+
+    _, series_choices4 = random.choice(list(series.items()))
+    labels4, metrics4 = series_choices4[0]
+    ret = {
+        "And": [
+            {
+                "And": [
+                        {
+                            "Or": [
+                                generate_label_leaf(labels1),
+                                generate_metric_leaf(metrics1)
+                            ]
+                        },
+                        {
+                            "Or": [
+                                generate_label_leaf(labels2),
+                                generate_metric_leaf(metrics2)
+                            ]
+                        },
+                ]
+            },
+            {
+                "And": [
+                        {
+                            "Or": [
+                                generate_label_leaf(labels3),
+                                generate_metric_leaf(metrics3)
+                            ]
+                        },
+                        {
+                            "Or": [
+                                generate_label_leaf(labels4),
+                                generate_metric_leaf(metrics4)
+                            ]
+                        },
+                ]
+            },
+        ]
+    }
+    return ret
+
 # Generate NUM_QUERIES queries.
 if __name__ == "__main__":
     if len(sys.argv) != 2:
@@ -105,13 +171,13 @@ if __name__ == "__main__":
     filename = sys.argv[1]
     series = get_series(filename)
 
-    for _ in range(100):
+    for _ in range(10):
         query = {
             "Select": {
                 "name": "generated_select",
                 "predicate": {
                     "name": "generated_predicate",
-                    "condition": generate_min_condition(series)
+                    "condition": generate_cnf_condition(series)
                 }
             }
         }
