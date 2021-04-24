@@ -1,9 +1,9 @@
-pub mod select;
 pub mod process;
+pub mod select;
 
-use serde::{Deserialize, Serialize};
 use crate::server::record::Record;
 pub use select::Select;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum Op {
