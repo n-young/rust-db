@@ -1,7 +1,7 @@
 # TRustDB
 [![Build & Tests](https://github.com/n-young/trustdb/actions/workflows/rust.yml/badge.svg)](https://github.com/n-young/trustdb/actions/workflows/rust.yml)
 
-Welcome to TRustDB (_Time series Rust DataBase_), a time series optimized for handling high-cardinality time series data. The technical report can be found [here](TRustDB.pdf).
+Welcome to TRustDB (_Time series Rust DataBase_), a database optimized for handling high-cardinality time series data. The technical report can be found [here](TRustDB.pdf).
 
 By Desmond Cheong & Nick Young
 
