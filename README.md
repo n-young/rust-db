@@ -1,16 +1,21 @@
-# Timeseries Database
-Desmond Cheong + Nick Young
+# TRustDB
+[![Build & Tests](https://github.com/n-young/trustdb/actions/workflows/rust.yml/badge.svg)](https://github.com/n-young/trustdb/actions/workflows/rust.yml)
 
-## Overview
-This is a timeseries database written in Rust. It supports inserts and queries in JSON format. Project specification [here](https://www.francosolleza.com/CS227/systems-project.html).
+Welcome to TRustDB (_Time series Rust DataBase_), a time series optimized for handling high-cardinality time series data. The technical report can be found [here](TRustDB.pdf).
+
+By Desmond Cheong & Nick Young
 
 ## Getting Started
 - Populate a `.env` file with the path of the data folder. We've suggested a default in the `sample.env` file.
 
-## Design Decisions
-- Only allowing key = label or metric = value; not the other way around
-- Considering only allowing key=label AND metric=value; disallowing unbounded metrics?
+## Key Design Choices
+- To support efficient queries, an inverted index is constructed that maps from label key-value pairs and metric names to series.
+- To reduce the storage footprint of this metadata, the inverted index is compressed into a Finite State Transducer (FST).
+- To speed up query evaluation, queries are rewritten and evaluated in Disjunctive Normal Form (DNF).
 
-## TODO
-- Try using FSTs
-- Get rid of the jank index serialization.
+More details can be found in the [technical report](TRustDB.pdf).
+
+## Roadmap & Contributing
+This database is far from complete and we have a lot more ideas to experiment with. Some of the things on our mind can be found on the [issues page](https://github.com/n-young/trustdb/issues).
+
+Contributions are welcome!
